@@ -1,0 +1,119 @@
+"""Configuration module using Pydantic settings."""
+from pathlib import Path
+from typing import Optional
+
+from pydantic import Field, validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """Application settings."""
+    
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+    )
+    
+    # Telegram Bot
+    BOT_TOKEN: str = Field(..., description="Telegram Bot Token")
+    ADMIN_ID: int = Field(..., description="Admin Telegram User ID")
+    
+    # Ollama
+    OLLAMA_HOST: str = Field(
+        default="http://localhost:11434",
+        description="Ollama API host URL"
+    )
+    OLLAMA_TIMEOUT: int = Field(
+        default=60,
+        description="Ollama API timeout in seconds"
+    )
+    
+    # Database
+    DATABASE_URL: str = Field(
+        default="sqlite:///data/bot.db",
+        description="Database connection URL"
+    )
+    
+    # Application
+    TEST_MODE: bool = Field(
+        default=False,
+        description="Test mode (admin only)"
+    )
+    LOG_LEVEL: str = Field(
+        default="INFO",
+        description="Logging level"
+    )
+    MAX_CONTEXT_LENGTH: int = Field(
+        default=4096,
+        description="Maximum context length for conversations"
+    )
+    DEFAULT_MODEL: str = Field(
+        default="llama2",
+        description="Default Ollama model"
+    )
+    
+    # Rate Limiting
+    RATE_LIMIT_MESSAGES: int = Field(
+        default=10,
+        description="Maximum messages per rate limit window"
+    )
+    RATE_LIMIT_WINDOW: int = Field(
+        default=60,
+        description="Rate limit window in seconds"
+    )
+    
+    # Health Check
+    HEALTH_CHECK_ENABLED: bool = Field(
+        default=True,
+        description="Enable health check endpoint"
+    )
+    HEALTH_CHECK_PORT: int = Field(
+        default=8080,
+        description="Health check server port"
+    )
+    
+    # Optional: Monitoring
+    SENTRY_DSN: Optional[str] = Field(
+        default=None,
+        description="Sentry DSN for error tracking"
+    )
+    PROMETHEUS_ENABLED: bool = Field(
+        default=False,
+        description="Enable Prometheus metrics"
+    )
+    PROMETHEUS_PORT: int = Field(
+        default=9090,
+        description="Prometheus metrics port"
+    )
+    
+    @validator("LOG_LEVEL")
+    def validate_log_level(cls, v: str) -> str:
+        """Validate log level."""
+        valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+        v = v.upper()
+        if v not in valid_levels:
+            raise ValueError(f"Invalid log level. Must be one of: {valid_levels}")
+        return v
+    
+    @validator("DATABASE_URL")
+    def validate_database_url(cls, v: str) -> str:
+        """Ensure SQLite database directory exists."""
+        if v.startswith("sqlite:///"):
+            db_path = Path(v.replace("sqlite:///", ""))
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+        return v
+    
+    @property
+    def is_postgres(self) -> bool:
+        """Check if using PostgreSQL."""
+        return self.DATABASE_URL.startswith("postgresql")
+    
+    @property
+    def is_sqlite(self) -> bool:
+        """Check if using SQLite."""
+        return self.DATABASE_URL.startswith("sqlite")
+
+
+# Create global settings instance
+settings = Settings()
