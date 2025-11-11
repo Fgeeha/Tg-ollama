@@ -208,7 +208,7 @@ async def clear_context(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 async def regenerate_response(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Regenerate the last assistant response."""
     user_id = update.effective_user.id
-    
+
     # Get last user message
     async with get_session() as session:
         result = await session.execute(
@@ -221,13 +221,20 @@ async def regenerate_response(update: Update, context: ContextTypes.DEFAULT_TYPE
             .limit(1)
         )
         last_user_msg = result.scalar_one_or_none()
-        
+
         if not last_user_msg:
             await update.message.reply_text(
                 "❌ No previous message found to regenerate."
             )
             return
-        
+
+        # Проверка на пустое сообщение
+        if not last_user_msg.message_content or not last_user_msg.message_content.strip():
+            await update.message.reply_text(
+                "❌ Last message was empty, cannot regenerate."
+            )
+            return
+
         # Delete last assistant response if exists
         result = await session.execute(
             select(Conversation)
@@ -240,14 +247,16 @@ async def regenerate_response(update: Update, context: ContextTypes.DEFAULT_TYPE
             .limit(1)
         )
         last_assistant_msg = result.scalar_one_or_none()
-        
+
         if last_assistant_msg:
             await session.delete(last_assistant_msg)
             await session.commit()
-    
+
     # Create a fake update with the last user message
     update.message.text = last_user_msg.message_content
-    
+
+    await update.message.reply_text("🔄 Regenerating response...")
+
     # Regenerate response
     await handle_message(update, context)
 
