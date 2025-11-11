@@ -8,8 +8,6 @@ services:
     volumes:
       - ./data:/app/data
     restart: unless-stopped
-    depends_on:
-      - ollama
     networks:
       - ollama-network
     healthcheck:
@@ -19,18 +17,18 @@ services:
       retries: 3
       start_period: 40s
 
-  ollama:
-    image: ollama/ollama:latest
-    container_name: ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    restart: unless-stopped
-    networks:
-      - ollama-network
-    environment:
-      - OLLAMA_HOST=0.0.0.0
+#  ollama:
+#    image: ollama/ollama:latest
+#    container_name: ollama
+#    ports:
+#      - "11434:11434"
+#    volumes:
+#      - ollama_data:/root/.ollama
+#    restart: unless-stopped
+#    networks:
+#      - ollama-network
+#    environment:
+#      - OLLAMA_HOST=0.0.0.0
     # Uncomment for GPU support (NVIDIA)
     # deploy:
     #   resources:
@@ -63,6 +61,6 @@ networks:
   ollama-network:
     driver: bridge
 
-volumes:
-  ollama_data:
+#volumes:
+#  ollama_data:
   # postgres_data:
