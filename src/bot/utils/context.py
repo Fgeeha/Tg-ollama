@@ -51,20 +51,33 @@ class ConversationContext:
         
         return messages
     
-    async def add_message(self, role: str, content: str) -> None:
-        """Add a message to the context."""
+    async def add_message(self, role: str, content: str) ->  List[Dict[str, str]]:
+        """Add a message to the context and return the updated history."""
         message = {"role": role, "content": content}
+
+        if self.user_id not in self._contexts:
+            # Ensure existing history is loaded before appending a new message
+            try:
+                await self.get_context()
+            except RuntimeError:
+                logger.debug(
+                    "Context database not initialized; using in-memory history only",
+                    user_id=self.user_id,
+                )
         
         if self.user_id not in self._contexts:
             self._contexts[self.user_id] = deque(maxlen=20)
-        
-        self._contexts[self.user_id].append(message)
+
+        context_buffer = self._contexts[self.user_id]
+        context_buffer.append(message)
         
         # Trim context if it's too long
-        total_length = sum(len(m["content"]) for m in self._contexts[self.user_id])
-        while total_length > self.max_length and len(self._contexts[self.user_id]) > 2:
-            self._contexts[self.user_id].popleft()
-            total_length = sum(len(m["content"]) for m in self._contexts[self.user_id])
+        total_length = sum(len(m["content"]) for m in context_buffer)
+        while total_length > self.max_length and len(context_buffer) > 2:
+            context_buffer.popleft()
+            total_length = sum(len(m["content"]) for m in context_buffer)
+
+        return list(context_buffer)
     
     async def clear(self) -> None:
         """Clear the conversation context."""

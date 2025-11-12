@@ -49,10 +49,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         # Get conversation context
         conv_context = ConversationContext(user_id, model_name, context.application.bot_data["settings"].MAX_CONTEXT_LENGTH)
         messages = await conv_context.get_context()
-        messages = normalize_chat_messages(messages)  # ← добавь это
-        messages.insert(0, {"role": "system", "content": (
-            "Отвечай на том же языке, что и последнее сообщение пользователя."
-        )})
+        messages = normalize_chat_messages(messages)
+        messages.insert(0, {
+            "role": "system",
+            "content": (
+                "Отвечай на том же языке, что и последнее сообщение пользователя."
+            )
+        })
+
+        user_message = {"role": "user", "content": message_text}
+        messages.append(user_message)
+        await conv_context.add_message(**user_message)
 
         
         # Save user message to database
