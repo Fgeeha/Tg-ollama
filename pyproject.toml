@@ -2,7 +2,7 @@
 name = "tg-ollama-bot"
 version = "1.0.0"
 description = "Telegram bot with Ollama integration for AI model interaction"
-authors = ["Your Name <you@example.com>"]
+authors = [{name = "nkolesnikov",email = "33605615+Fgeeha@users.noreply.github.com"}]
 readme = "README.md"
 packages = [{include = "bot", from = "src"}]
 
