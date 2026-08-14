@@ -1,0 +1,32 @@
+# Secrets — must never be baked into a published image
+.env
+.env.*
+!.env.example
+
+# VCS / CI
+.git
+.gitignore
+.github
+
+# Local runtime state
+data/
+logs/
+backups/
+*.db
+*.sqlite
+
+# Python artefacts
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# Editors
+.idea/
+.vscode/

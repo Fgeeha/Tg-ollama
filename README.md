@@ -1,5 +1,7 @@
 # Telegram Bot with Ollama Integration
 
+[![Docker](https://github.com/Fgeeha/Tg-ollama/actions/workflows/docker.yml/badge.svg)](https://github.com/Fgeeha/Tg-ollama/actions/workflows/docker.yml)
+
 A powerful Telegram bot that integrates with Ollama for AI-powered conversations, featuring user management, model selection, and comprehensive admin controls.
 
 ## Features
