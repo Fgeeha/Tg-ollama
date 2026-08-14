@@ -47,5 +47,8 @@ def setup_handlers(application: Application) -> None:
     
     # Message handler for chat (must be last)
     application.add_handler(
+        MessageHandler(filters.PHOTO, chat.handle_photo)
+    )
+    application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, chat.handle_message)
     )

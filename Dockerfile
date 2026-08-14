@@ -39,7 +39,7 @@ RUN apt-get update && apt-get install -y \
 
 # Create non-root user
 RUN useradd -m -u 1000 botuser && \
-    mkdir -p /app/data && \
+    mkdir -p /app/data /app/logs /app/backups && \
     chown -R botuser:botuser /app
 
 # Set working directory

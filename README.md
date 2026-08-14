@@ -8,6 +8,7 @@ A powerful Telegram bot that integrates with Ollama for AI-powered conversations
 - 🤖 **Ollama Integration**: Seamlessly interact with locally or remotely hosted Ollama models
 - 💬 **Streaming Responses**: Real-time message streaming for better user experience
 - 🔄 **Model Selection**: Choose from available pre-downloaded Ollama models
+- 🖼️ **Image Input**: Send a photo (with an optional caption) to a vision-capable model such as `llava`; the bot checks the selected model's `vision` capability first and tells you if it is unsupported
 - 📝 **Conversation Context**: Maintains conversation history with intelligent context management
 - ⏱️ **Rate Limiting**: Configurable rate limiting to prevent abuse
 
