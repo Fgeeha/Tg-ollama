@@ -6,6 +6,7 @@ import structlog
 from sqlalchemy import select
 
 from bot.database import Conversation, get_session
+from bot.utils.tokens import estimate_messages_tokens
 
 logger = structlog.get_logger()
 
@@ -21,11 +22,17 @@ class ConversationContext:
     # In-memory storage for active contexts
     _contexts: 'OrderedDict[int, deque]' = OrderedDict()
 
-    def __init__(self, user_id: int, model_name: str, max_length: int = 4096):
-        """Initialize conversation context."""
+    def __init__(self, user_id: int, model_name: str, max_tokens: int = 3000):
+        """Initialize conversation context.
+
+        Args:
+            user_id: Owner of the conversation.
+            model_name: Model the context is built for.
+            max_tokens: Approximate token budget for the history.
+        """
         self.user_id = user_id
         self.model_name = model_name
-        self.max_length = max_length
+        self.max_tokens = max_tokens
 
     async def get_context(self, message_limit: int = 10) -> list[dict[str, str]]:
         """Get conversation context for the user."""
@@ -92,11 +99,14 @@ class ConversationContext:
         context_buffer = self._contexts[self.user_id]
         context_buffer.append(message)
 
-        # Trim context if it's too long
-        total_length = sum(len(m["content"]) for m in context_buffer)
-        while total_length > self.max_length and len(context_buffer) > 2:
+        # Trim the oldest turns until the history fits the token budget. The
+        # last two messages always stay: without them there is no conversation
+        # left to continue.
+        while (
+            estimate_messages_tokens(list(context_buffer)) > self.max_tokens
+            and len(context_buffer) > 2
+        ):
             context_buffer.popleft()
-            total_length = sum(len(m["content"]) for m in context_buffer)
 
         return list(context_buffer)
 

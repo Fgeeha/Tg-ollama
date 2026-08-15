@@ -120,7 +120,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             "• Just send a message to chat!\n"
             "• /clear - Clear conversation context\n"
             "• /regenerate - Regenerate last response\n"
-            "• /history - Show recent messages\n\n"
+            "• /history - Show recent messages\n"
+            "• /stop - Stop the current generation\n"
+            "• /system [text|reset] - Your own system prompt\n\n"
         )
 
     if is_admin:

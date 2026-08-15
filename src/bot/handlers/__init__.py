@@ -38,6 +38,8 @@ def setup_handlers(application: Application) -> None:
     application.add_handler(CommandHandler("clear", chat.clear_context))
     application.add_handler(CommandHandler("regenerate", chat.regenerate_response))
     application.add_handler(CommandHandler("history", chat.show_history))
+    application.add_handler(CommandHandler("stop", chat.stop_generation))
+    application.add_handler(CommandHandler("system", chat.system_prompt_command))
 
     # Callback queries
     application.add_handler(

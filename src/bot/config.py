@@ -43,9 +43,25 @@ class Settings(BaseSettings):
         default="INFO",
         description="Logging level"
     )
-    MAX_CONTEXT_LENGTH: int = Field(
-        default=4096,
-        description="Maximum context length for conversations"
+    MAX_CONTEXT_TOKENS: int = Field(
+        default=3000,
+        description=(
+            "Approximate token budget for the conversation history. The count "
+            "is an estimate biased to overcount, since Ollama exposes no "
+            "tokenizer; keep it below the model's num_ctx."
+        )
+    )
+    OLLAMA_KEEP_ALIVE: str = Field(
+        default="10m",
+        description="How long Ollama keeps the model loaded between requests"
+    )
+    OLLAMA_TEMPERATURE: float | None = Field(
+        default=None,
+        description="Sampling temperature; None leaves the model default"
+    )
+    OLLAMA_NUM_CTX: int | None = Field(
+        default=None,
+        description="Context window size in tokens; None leaves the model default"
     )
     DEFAULT_MODEL: str = Field(
         default="llama2",

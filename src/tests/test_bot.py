@@ -220,10 +220,10 @@ class TestConversationContext:
 
     @pytest.mark.asyncio
     async def test_context_trimming(self):
-        """Test that context is trimmed when too long."""
+        """Context is trimmed once it exceeds the token budget."""
         from bot.utils.context import ConversationContext
 
-        context = ConversationContext(user_id=123, model_name="llama2", max_length=100)
+        context = ConversationContext(user_id=123, model_name="llama2", max_tokens=30)
 
         # Add messages that exceed max length
         await context.add_message("user", "A" * 50)
@@ -232,10 +232,9 @@ class TestConversationContext:
 
         messages = await context.get_context()
 
-        # First message should be trimmed
-        assert len(messages) <= 2
-        total_length = sum(len(m["content"]) for m in messages)
-        assert total_length <= 100
+        # The oldest message is dropped first; the last exchange always stays,
+        # even when it alone exceeds the budget.
+        assert [m["content"][0] for m in messages] == ["B", "C"]
 
 
 class TestHistoryOrdering:

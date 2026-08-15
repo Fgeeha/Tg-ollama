@@ -6,6 +6,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 import structlog
+from telegram import BotCommand
 from telegram.ext import Application
 
 from bot.config import settings
@@ -39,9 +40,21 @@ class BotApplication:
         await load_into_settings()
 
         # Initialize Ollama client
+        # Only pass options the operator actually set; anything else is left
+        # to the model's own defaults.
+        options = {
+            name: value
+            for name, value in (
+                ("temperature", settings.OLLAMA_TEMPERATURE),
+                ("num_ctx", settings.OLLAMA_NUM_CTX),
+            )
+            if value is not None
+        }
         self.ollama_client = OllamaClient(
             base_url=settings.OLLAMA_HOST,
-            timeout=settings.OLLAMA_TIMEOUT
+            timeout=settings.OLLAMA_TIMEOUT,
+            keep_alive=settings.OLLAMA_KEEP_ALIVE,
+            options=options,
         )
         await self.ollama_client.verify_connection()
         logger.info("Ollama client initialized", host=settings.OLLAMA_HOST)
@@ -64,6 +77,8 @@ class BotApplication:
         setup_handlers(self.application)
         logger.info("Handlers configured")
 
+        await self._publish_command_menu()
+
         # Start health check server if enabled
         if settings.HEALTH_CHECK_ENABLED:
             self.health_server = await start_health_server(
@@ -71,6 +86,33 @@ class BotApplication:
                 settings.HEALTH_CHECK_PORT
             )
             logger.info("Health check server started", port=settings.HEALTH_CHECK_PORT)
+
+    async def _publish_command_menu(self) -> None:
+        """Show the command list in Telegram's UI.
+
+        Only the commands every authorized user can run: admin commands stay
+        out of the menu so they are not advertised to everyone.
+        """
+        commands = [
+            BotCommand("start", "Начать работу с ботом"),
+            BotCommand("help", "Список команд"),
+            BotCommand("status", "Состояние бота и Ollama"),
+            BotCommand("models", "Выбрать модель"),
+            BotCommand("current_model", "Текущая модель"),
+            BotCommand("model_info", "Информация о модели"),
+            BotCommand("system", "Свой системный промпт"),
+            BotCommand("clear", "Очистить контекст диалога"),
+            BotCommand("regenerate", "Перегенерировать ответ"),
+            BotCommand("history", "Последние сообщения"),
+            BotCommand("stop", "Прервать генерацию"),
+        ]
+
+        try:
+            await self.application.bot.set_my_commands(commands)
+            logger.info("Command menu published", count=len(commands))
+        except Exception as err:
+            # A missing menu is cosmetic; never block startup over it.
+            logger.warning("Could not publish command menu", error=str(err))
 
     async def start(self) -> None:
         """Start the bot."""

@@ -1,4 +1,5 @@
 """Chat handler for conversations with Ollama models."""
+import asyncio
 import base64
 import time
 from html import escape
@@ -20,6 +21,22 @@ from bot.utils.time import utc_now
 logger = structlog.get_logger()
 
 IMAGE_PLACEHOLDER_PREFIX = "[image]"
+
+# Telegram clears the typing indicator after about five seconds.
+TYPING_REFRESH_INTERVAL = 4.0
+
+# A system prompt competes with the conversation for the context window.
+MAX_SYSTEM_PROMPT_CHARS = 2000
+
+DEFAULT_SYSTEM_PROMPT = (
+    "Отвечай на том же языке, что и последнее сообщение пользователя."
+)
+
+# Updates are handled concurrently, so one user can fire off several messages
+# at once. Two generations for the same user would interleave their writes and
+# scramble the stored conversation order, so only one runs at a time. The
+# running task is kept so /stop can cancel it.
+_generating: dict[int, asyncio.Task] = {}
 
 # Telegram rejects text messages longer than 4096 characters.
 TELEGRAM_MAX_MESSAGE_LENGTH = 4096
@@ -65,6 +82,39 @@ async def _deliver_response(update: Update, bot_message, text: str) -> None:
         await update.message.reply_text(chunk)
 
 
+async def _keep_typing(context, chat_id: int, action) -> None:
+    """Re-send the chat action until cancelled."""
+    try:
+        while True:
+            await asyncio.sleep(TYPING_REFRESH_INTERVAL)
+            await context.bot.send_chat_action(chat_id=chat_id, action=action)
+    except asyncio.CancelledError:
+        pass
+    except Exception as err:
+        # Losing the indicator is cosmetic; never let it break the answer.
+        logger.debug("Could not refresh typing indicator", error=str(err))
+
+
+def _mark_past_images(message: dict) -> dict:
+    """Make it explicit that an image from an earlier turn is not attached.
+
+    History stores images as a text placeholder, so without this the model sees
+    a caption referring to a picture it was never given.
+    """
+    content = message["content"]
+    if message["role"] != "user" or not content.startswith(IMAGE_PLACEHOLDER_PREFIX):
+        return message
+
+    caption = content[len(IMAGE_PLACEHOLDER_PREFIX):].strip()
+    return {
+        "role": message["role"],
+        "content": (
+            f"[ранее пользователь присылал изображение; оно недоступно в этом "
+            f"запросе] {caption}"
+        ),
+    }
+
+
 async def _process_chat_interaction(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -83,6 +133,12 @@ async def _process_chat_interaction(
         await update.message.reply_text("❌ Cannot send an empty message.")
         return
 
+    if user_id in _generating:
+        await update.message.reply_text(
+            "⏳ Я ещё отвечаю на предыдущее сообщение. Дождитесь ответа."
+        )
+        return
+
     # Get user's selected model
     async with get_session() as session:
         result = await session.execute(
@@ -97,6 +153,7 @@ async def _process_chat_interaction(
             return
 
         model_name = user.selected_model or context.application.bot_data["settings"].DEFAULT_MODEL
+        system_prompt = user.system_prompt or DEFAULT_SYSTEM_PROMPT
 
     await context.bot.send_chat_action(
         chat_id=update.effective_chat.id, action=typing_action
@@ -112,21 +169,23 @@ async def _process_chat_interaction(
             )
             return
 
+    _generating[user_id] = asyncio.current_task()
+    # The typing indicator expires after a few seconds; refresh it for as long
+    # as the model keeps working.
+    typing = asyncio.create_task(
+        _keep_typing(context, update.effective_chat.id, typing_action)
+    )
     try:
         # Get conversation context
         conv_context = ConversationContext(
             user_id,
             model_name,
-            context.application.bot_data["settings"].MAX_CONTEXT_LENGTH,
+            context.application.bot_data["settings"].MAX_CONTEXT_TOKENS,
         )
         messages = await conv_context.get_context()
         messages = normalize_chat_messages(messages)
-        messages.insert(0, {
-            "role": "system",
-            "content": (
-                "Отвечай на том же языке, что и последнее сообщение пользователя."
-            ),
-        })
+        messages = [_mark_past_images(m) for m in messages]
+        messages.insert(0, {"role": "system", "content": system_prompt})
 
         user_message = {"role": "user", "content": payload_content}
         if payload_images:
@@ -247,16 +306,24 @@ async def _process_chat_interaction(
             f"❌ Model '{model_name}' not found.\n"
             "Please use /models to select an available model."
         )
+    except asyncio.CancelledError:
+        # /stop cancelled us. Awaiting anything here would just be cancelled
+        # again, so the confirmation is sent by the /stop handler itself.
+        logger.info("Generation cancelled by user", user_id=user_id)
+        raise
     except TimeoutError:
         await update.message.reply_text(
             "⏱️ Request timed out. Please try again with a shorter message or different model."
         )
-    except Exception as e:
-        logger.error("Chat error", user_id=user_id, model=model_name, error=str(e))
+    except Exception:
+        logger.exception("Chat error", user_id=user_id, model=model_name)
         await update.message.reply_text(
             "❌ An error occurred while generating the response.\n"
             "Please try again later or contact the administrator."
         )
+    finally:
+        typing.cancel()
+        _generating.pop(user_id, None)
 
 @authorized_only
 @rate_limited
@@ -304,6 +371,73 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         typing_action=ChatAction.UPLOAD_PHOTO,
         requires_image_support=True,
     )
+
+
+@authorized_only
+async def stop_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Cancel the caller's running generation, if any."""
+    user_id = update.effective_user.id
+    task = _generating.get(user_id)
+
+    if task is None or task.done():
+        await update.message.reply_text("Сейчас нечего останавливать.")
+        return
+
+    task.cancel()
+    await update.message.reply_text("🛑 Генерация остановлена.")
+
+
+@authorized_only
+async def system_prompt_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show, set or reset the caller's system prompt."""
+    user_id = update.effective_user.id
+    argument = " ".join(context.args).strip() if context.args else ""
+
+    async with get_session() as session:
+        user = await session.scalar(select(User).where(User.user_id == user_id))
+        if not user:
+            await update.message.reply_text("❌ Пользователь не найден.")
+            return
+
+        if not argument:
+            current = user.system_prompt
+            if current:
+                await update.message.reply_text(
+                    "🧭 <b>Ваш системный промпт:</b>\n\n"
+                    f"<code>{escape(current)}</code>\n\n"
+                    "Изменить: /system текст\n"
+                    "Вернуть стандартный: /system reset",
+                    parse_mode="HTML",
+                )
+            else:
+                await update.message.reply_text(
+                    "🧭 Используется стандартный системный промпт:\n\n"
+                    f"<code>{escape(DEFAULT_SYSTEM_PROMPT)}</code>\n\n"
+                    "Задать свой: /system текст",
+                    parse_mode="HTML",
+                )
+            return
+
+        if argument.lower() in ("reset", "сброс", "default"):
+            user.system_prompt = None
+            await update.message.reply_text("🧭 Восстановлен стандартный системный промпт.")
+            logger.info("System prompt reset", user_id=user_id)
+            return
+
+        if len(argument) > MAX_SYSTEM_PROMPT_CHARS:
+            await update.message.reply_text(
+                f"❌ Слишком длинный промпт: {len(argument)} символов, "
+                f"максимум {MAX_SYSTEM_PROMPT_CHARS}."
+            )
+            return
+
+        user.system_prompt = argument
+
+    await update.message.reply_text(
+        f"🧭 Системный промпт обновлён:\n\n<code>{escape(argument)}</code>",
+        parse_mode="HTML",
+    )
+    logger.info("System prompt updated", user_id=user_id, length=len(argument))
 
 
 @authorized_only
