@@ -1,24 +1,23 @@
 """Configuration module using Pydantic settings."""
 from pathlib import Path
-from typing import Optional
 
-from pydantic import Field, validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """Application settings."""
-    
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=True,
     )
-    
+
     # Telegram Bot
     BOT_TOKEN: str = Field(..., description="Telegram Bot Token")
     ADMIN_ID: int = Field(..., description="Admin Telegram User ID")
-    
+
     # Ollama
     OLLAMA_HOST: str = Field(
         default="http://localhost:11434",
@@ -28,13 +27,13 @@ class Settings(BaseSettings):
         default=60,
         description="Ollama API timeout in seconds"
     )
-    
+
     # Database
     DATABASE_URL: str = Field(
         default="sqlite:///data/bot.db",
         description="Database connection URL"
     )
-    
+
     # Application
     TEST_MODE: bool = Field(
         default=False,
@@ -52,7 +51,7 @@ class Settings(BaseSettings):
         default="llama2",
         description="Default Ollama model"
     )
-    
+
     # Rate Limiting
     RATE_LIMIT_MESSAGES: int = Field(
         default=10,
@@ -77,9 +76,9 @@ class Settings(BaseSettings):
         default=8080,
         description="Health check server port"
     )
-    
+
     # Optional: Monitoring
-    SENTRY_DSN: Optional[str] = Field(
+    SENTRY_DSN: str | None = Field(
         default=None,
         description="Sentry DSN for error tracking"
     )
@@ -91,8 +90,9 @@ class Settings(BaseSettings):
         default=9090,
         description="Prometheus metrics port"
     )
-    
-    @validator("LOG_LEVEL")
+
+    @field_validator("LOG_LEVEL")
+    @classmethod
     def validate_log_level(cls, v: str) -> str:
         """Validate log level."""
         valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
@@ -100,20 +100,21 @@ class Settings(BaseSettings):
         if v not in valid_levels:
             raise ValueError(f"Invalid log level. Must be one of: {valid_levels}")
         return v
-    
-    @validator("DATABASE_URL")
+
+    @field_validator("DATABASE_URL")
+    @classmethod
     def validate_database_url(cls, v: str) -> str:
         """Ensure SQLite database directory exists."""
         if v.startswith("sqlite:///"):
             db_path = Path(v.replace("sqlite:///", ""))
             db_path.parent.mkdir(parents=True, exist_ok=True)
         return v
-    
+
     @property
     def is_postgres(self) -> bool:
         """Check if using PostgreSQL."""
         return self.DATABASE_URL.startswith("postgresql")
-    
+
     @property
     def is_sqlite(self) -> bool:
         """Check if using SQLite."""

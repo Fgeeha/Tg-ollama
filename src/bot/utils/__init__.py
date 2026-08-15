@@ -2,7 +2,12 @@
 from bot.utils.context import ConversationContext
 from bot.utils.health import start_health_server, stop_health_server
 from bot.utils.logging import setup_logging
-from bot.utils.ollama import OllamaClient, OllamaError, OllamaConnectionError, OllamaModelNotFoundError
+from bot.utils.ollama import (
+    OllamaClient,
+    OllamaConnectionError,
+    OllamaError,
+    OllamaModelNotFoundError,
+)
 
 __all__ = [
     "ConversationContext",

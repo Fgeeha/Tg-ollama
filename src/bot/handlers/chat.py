@@ -1,5 +1,4 @@
 """Chat handler for conversations with Ollama models."""
-import asyncio
 import base64
 import time
 from io import BytesIO
@@ -15,6 +14,7 @@ from bot.database import Conversation, ModelUsage, User, get_session
 from bot.decorators import authorized_only, rate_limited
 from bot.utils.context import ConversationContext, normalize_chat_messages
 from bot.utils.ollama import OllamaClient, OllamaModelNotFoundError
+from bot.utils.time import utc_now
 
 logger = structlog.get_logger()
 
@@ -143,7 +143,6 @@ async def _process_chat_interaction(
                 message_content=stored_user_message,
             )
             session.add(user_msg)
-            await session.commit()
 
         # Generate response
         start_time = time.time()
@@ -177,6 +176,10 @@ async def _process_chat_interaction(
 
             if chunk.get("done"):
                 response_time_ms = chunk.get("response_time_ms", int((time.time() - start_time) * 1000))
+                # Ollama reports token counts in the final chunk.
+                prompt_tokens = chunk.get("prompt_eval_count") or 0
+                completion_tokens = chunk.get("eval_count") or 0
+                total_tokens = prompt_tokens + completion_tokens
 
                 if not response_text.strip():
                     await update.message.reply_text(
@@ -195,12 +198,12 @@ async def _process_chat_interaction(
                         message_role="assistant",
                         message_content=response_text,
                         response_time_ms=response_time_ms,
+                        tokens_used=total_tokens or None,
                     )
                     session.add(assistant_msg)
 
                     # Update usage stats
-                    from datetime import datetime
-                    today = datetime.utcnow().date()
+                    today = utc_now().date()
 
                     result = await session.execute(
                         select(ModelUsage).where(
@@ -214,17 +217,18 @@ async def _process_chat_interaction(
                     if usage:
                         usage.request_count += 1
                         usage.total_response_time_ms += response_time_ms
+                        usage.total_tokens += total_tokens
                     else:
                         usage = ModelUsage(
                             user_id=user_id,
                             model_name=model_name,
                             request_count=1,
                             total_response_time_ms=response_time_ms,
+                            total_tokens=total_tokens,
                             date=today,
                         )
                         session.add(usage)
 
-                    await session.commit()
 
                 # Update context
                 await conv_context.add_message("assistant", response_text)
@@ -242,7 +246,7 @@ async def _process_chat_interaction(
             f"❌ Model '{model_name}' not found.\n"
             "Please use /models to select an available model."
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         await update.message.reply_text(
             "⏱️ Request timed out. Please try again with a shorter message or different model."
         )
@@ -318,7 +322,6 @@ async def clear_context(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await session.execute(
             delete(Conversation).where(Conversation.user_id == user_id)
         )
-        await session.commit()
 
     await update.message.reply_text(
         "🧹 Conversation context cleared!\n"
@@ -381,7 +384,6 @@ async def regenerate_response(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         if last_assistant_msg:
             await session.delete(last_assistant_msg)
-            await session.commit()
 
     await update.message.reply_text("🔄 Regenerating response...")
 

@@ -1,12 +1,12 @@
 """User command handlers for model management."""
 import structlog
 from sqlalchemy import select
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
-from bot.database import get_session, User
+from bot.database import User, get_session
 from bot.decorators import authorized_only
-from bot.utils.ollama import OllamaClient, OllamaModelNotFoundError
+from bot.utils.ollama import OllamaClient
 
 logger = structlog.get_logger()
 
@@ -15,16 +15,16 @@ logger = structlog.get_logger()
 async def list_models(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """List available Ollama models."""
     ollama_client: OllamaClient = context.application.bot_data["ollama_client"]
-    
+
     try:
         models = await ollama_client.list_models()
-        
+
         if not models:
             await update.message.reply_text(
                 "❌ No models available. Please ensure Ollama has models installed."
             )
             return
-        
+
         # Get current user's selected model
         async with get_session() as session:
             result = await session.execute(
@@ -32,7 +32,7 @@ async def list_models(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             )
             user = result.scalar_one_or_none()
             current_model = user.selected_model if user else None
-        
+
         # Create inline keyboard for model selection
         keyboard = []
         for model in models:
@@ -40,34 +40,34 @@ async def list_models(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             # Format size
             size_gb = model.get("size", 0) / (1024**3)
             size_str = f"{size_gb:.1f}GB"
-            
+
             # Add checkmark for current model
             is_current = model_name == current_model
             display_name = f"{'✅ ' if is_current else ''}{model_name} ({size_str})"
-            
+
             keyboard.append([
                 InlineKeyboardButton(
                     display_name,
                     callback_data=f"select_model:{model_name}"
                 )
             ])
-        
+
         reply_markup = InlineKeyboardMarkup(keyboard)
-        
+
         message = (
             "🤖 <b>Available Models:</b>\n\n"
             "Select a model to use for conversations:"
         )
-        
+
         if current_model:
             message += f"\n\n<i>Current model: {current_model}</i>"
-        
+
         await update.message.reply_text(
             message,
             reply_markup=reply_markup,
             parse_mode="HTML"
         )
-        
+
     except Exception as e:
         logger.error("Failed to list models", error=str(e))
         await update.message.reply_text(
@@ -85,10 +85,10 @@ async def switch_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             "Use /models to see available models."
         )
         return
-    
+
     model_name = context.args[0]
     ollama_client: OllamaClient = context.application.bot_data["ollama_client"]
-    
+
     # Validate model exists
     try:
         if not await ollama_client.model_exists(model_name):
@@ -104,23 +104,23 @@ async def switch_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             "❌ Failed to validate model. Please try again later."
         )
         return
-    
+
     # Update user's selected model
     async with get_session() as session:
         result = await session.execute(
             select(User).where(User.user_id == update.effective_user.id)
         )
         user = result.scalar_one_or_none()
-        
+
         if user:
             user.selected_model = model_name
             await session.commit()
-            
+
             await update.message.reply_text(
                 f"✅ Switched to model: <b>{model_name}</b>",
                 parse_mode="HTML"
             )
-            
+
             logger.info(
                 "User switched model",
                 user_id=update.effective_user.id,
@@ -136,37 +136,36 @@ async def handle_model_selection(update: Update, context: ContextTypes.DEFAULT_T
     """Handle model selection from inline keyboard."""
     query = update.callback_query
     await query.answer()
-    
+
     # Parse the callback data
     _, model_name = query.data.split(":", 1)
-    
+
     # Get current user
     user_id = query.from_user.id
-    
+
     # Update user's selected model
     async with get_session() as session:
         result = await session.execute(
             select(User).where(User.user_id == user_id)
         )
         user = result.scalar_one_or_none()
-        
+
         if not user:
             await query.message.reply_text(
                 "❌ You are not authorized. Please contact the administrator."
             )
             return
-        
+
         if not user.is_active:
             await query.message.reply_text(
                 "❌ Your access has been revoked. Please contact the administrator."
             )
             return
-        
+
         # Update model
         old_model = user.selected_model
         user.selected_model = model_name
-        await session.commit()
-    
+
     # Update the message
     await query.edit_message_text(
         f"✅ Model switched successfully!\n\n"
@@ -175,7 +174,7 @@ async def handle_model_selection(update: Update, context: ContextTypes.DEFAULT_T
         f"You can now start chatting with the new model.",
         parse_mode="HTML"
     )
-    
+
     logger.info(
         "User selected model via keyboard",
         user_id=user_id,
@@ -195,7 +194,7 @@ async def model_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             )
             user = result.scalar_one_or_none()
             model_name = user.selected_model if user else None
-        
+
         if not model_name:
             await update.message.reply_text(
                 "You haven't selected a model yet.\n"
@@ -205,16 +204,16 @@ async def model_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             return
     else:
         model_name = context.args[0]
-    
+
     ollama_client: OllamaClient = context.application.bot_data["ollama_client"]
-    
+
     try:
         # Get model information
         info = await ollama_client.show_model_info(model_name)
-        
+
         # Format the information
         message = f"🤖 <b>Model: {model_name}</b>\n\n"
-        
+
         # Add model details if available
         if "details" in info:
             details = info["details"]
@@ -224,20 +223,20 @@ async def model_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
                 message += f"🔧 Quantization: {details['quantization_level']}\n"
             if "family" in details:
                 message += f"👪 Family: {details['family']}\n"
-        
+
         # Add license info if available
         if "license" in info:
             message += f"\n📜 License: {info['license']}\n"
-        
+
         # Add template if available (truncated)
         if "template" in info:
             template = info["template"][:200] + "..." if len(info["template"]) > 200 else info["template"]
             message += f"\n📝 Template preview:\n<code>{template}</code>\n"
-        
+
         await update.message.reply_text(message, parse_mode="HTML")
-        
+
     except Exception as e:
-        logger.error(f"Failed to get model info", model=model_name, error=str(e))
+        logger.error("Failed to get model info", model=model_name, error=str(e))
         await update.message.reply_text(
             f"❌ Failed to get information for model '{model_name}'.\n"
             "Make sure the model exists and try again."
@@ -252,7 +251,7 @@ async def current_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             select(User).where(User.user_id == update.effective_user.id)
         )
         user = result.scalar_one_or_none()
-        
+
         if user and user.selected_model:
             await update.message.reply_text(
                 f"🤖 Current model: <b>{user.selected_model}</b>\n\n"

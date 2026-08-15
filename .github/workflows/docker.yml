@@ -17,24 +17,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
         with:
-          python-version: "3.12"
-
-      # Must be 2.x: poetry.lock is lock-version 2.1, which Poetry 1.x rejects.
-      - name: Install Poetry
-        run: pipx install poetry==2.2.1
+          enable-cache: true
 
       - name: Install dependencies
-        run: poetry install --no-interaction
+        run: uv sync --frozen
 
       # bot.config builds Settings() at import time, so collection needs these.
       # Dummy values: nothing here talks to Telegram.
+      - name: Lint
+        env:
+          BOT_TOKEN: test-token
+          ADMIN_ID: "1"
+        run: uv run ruff check src/
+
       - name: Run tests
         env:
           BOT_TOKEN: test-token
           ADMIN_ID: "1"
-        run: poetry run pytest -q
+        run: uv run pytest -q
 
   build:
     needs: test

@@ -1,7 +1,7 @@
 """Ollama API client for model interactions."""
 import time
 from collections.abc import AsyncGenerator
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 import structlog
@@ -85,7 +85,7 @@ class OllamaClient:
             except httpx.HTTPError as e:
                 logger.error("Failed to list models", error=str(e))
                 if not self._available_models:
-                    raise OllamaError(f"Failed to list models: {e}")
+                    raise OllamaError(f"Failed to list models: {e}") from e
 
         return self._available_models
 
@@ -106,135 +106,6 @@ class OllamaClient:
             model == model_name or model.startswith(f"{model_base}:")
             for model in models
         )
-
-    async def pull_model(self, model_name: str) -> AsyncGenerator[str, None]:
-        """Pull a model from Ollama registry (yields progress updates)."""
-        try:
-            async with self.client.stream(
-                "POST",
-                "/api/pull",
-                json={"name": model_name},
-            ) as response:
-                response.raise_for_status()
-                async for line in response.aiter_lines():
-                    if line:
-                        yield line
-        except httpx.HTTPError as e:
-            logger.error(f"Failed to pull model {model_name}", error=str(e))
-            raise OllamaError(f"Failed to pull model: {e}")
-
-    async def generate(
-            self,
-            model: str,
-            prompt: str,
-            context: Optional[list[int]] = None,
-            **kwargs
-    ) -> dict[str, Any]:
-        """Непотоковый вызов: возвращает один JSON-результат."""
-        if not await self.model_exists(model):
-            raise OllamaModelNotFoundError(f"Model '{model}' not found")
-
-        payload = {
-            "model": model,
-            "prompt": prompt,
-            "stream": False,
-            **kwargs
-        }
-        if context:
-            payload["context"] = context
-
-        start_time = time.time()
-        try:
-            response = await self.client.post("/api/generate", json=payload)
-            response.raise_for_status()
-            result = response.json()
-            result["response_time_ms"] = int((time.time() - start_time) * 1000)
-            return result
-        except httpx.HTTPError as e:
-            logger.error("Failed to generate response", model=model, error=str(e))
-            raise OllamaError(f"Failed to generate response: {e}")
-
-    async def generate_stream(
-            self,
-            model: str,
-            prompt: str,
-            context: Optional[list[int]] = None,
-            **kwargs
-    ) -> AsyncGenerator[dict[str, Any], None]:
-        """Потоковый вызов: async generator."""
-        if not await self.model_exists(model):
-            raise OllamaModelNotFoundError(f"Model '{model}' not found")
-
-        payload = {
-            "model": model,
-            "prompt": prompt,
-            "stream": True,
-            **kwargs
-        }
-        if context:
-            payload["context"] = context
-
-        start_time = time.time()
-        async for chunk in self._generate_stream(payload, start_time):
-            yield chunk
-
-    async def _generate_stream(
-        self,
-        payload: dict[str, Any],
-        start_time: float
-    ) -> AsyncGenerator[dict[str, Any], None]:
-        """Stream generation response."""
-        try:
-            async with self.client.stream(
-                "POST",
-                "/api/generate",
-                json=payload,
-                timeout=httpx.Timeout(None),  # No timeout for streaming
-            ) as response:
-                response.raise_for_status()
-
-                async for line in response.aiter_lines():
-                    if line:
-                        import json
-                        data = json.loads(line)
-
-                        # Add timing to final response
-                        if data.get("done"):
-                            data["response_time_ms"] = int((time.time() - start_time) * 1000)
-
-                        yield data
-
-        except httpx.HTTPError as e:
-            logger.error("Stream generation failed", error=str(e))
-            raise OllamaError(f"Stream generation failed: {e}")
-
-    async def chat(
-        self,
-        model: str,
-        messages: list[dict[str, str]],
-        **kwargs
-    ) -> dict[str, Any]:
-        """Чат без стриминга: возвращает один JSON-результат."""
-        if not await self.model_exists(model):
-            raise OllamaModelNotFoundError(f"Model '{model}' not found")
-
-        payload = {
-            "model": model,
-            "messages": messages,
-            "stream": False,
-            **kwargs,
-        }
-
-        start_time = time.time()
-        try:
-            response = await self.client.post("/api/chat", json=payload)
-            response.raise_for_status()
-            result = response.json()
-            result["response_time_ms"] = int((time.time() - start_time) * 1000)
-            return result
-        except httpx.HTTPError as e:
-            logger.error("Failed to chat", model=model, error=str(e))
-            raise OllamaError(f"Failed to chat: {e}")
 
     async def chat_stream(
         self,
@@ -289,20 +160,7 @@ class OllamaClient:
 
         except httpx.HTTPError as e:
             logger.error("Stream chat failed", error=str(e))
-            raise OllamaError(f"Stream chat failed: {e}")
-
-    async def embeddings(self, model: str, prompt: str) -> list[float]:
-        """Get embeddings for text."""
-        try:
-            response = await self.client.post(
-                "/api/embeddings",
-                json={"model": model, "prompt": prompt}
-            )
-            response.raise_for_status()
-            return response.json()["embedding"]
-        except httpx.HTTPError as e:
-            logger.error("Failed to get embeddings", model=model, error=str(e))
-            raise OllamaError(f"Failed to get embeddings: {e}")
+            raise OllamaError(f"Stream chat failed: {e}") from e
 
     async def show_model_info(self, model: str) -> dict[str, Any]:
         """Get detailed information about a model."""
@@ -315,7 +173,7 @@ class OllamaClient:
             return response.json()
         except httpx.HTTPError as e:
             logger.error("Failed to get model info", model=model, error=str(e))
-            raise OllamaError(f"Failed to get model info: {e}")
+            raise OllamaError(f"Failed to get model info: {e}") from e
 
     async def supports_images(self, model: str) -> bool:
         """Return True if the model can process images."""

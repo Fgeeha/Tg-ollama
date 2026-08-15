@@ -3,6 +3,7 @@ from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
 from bot.config import Settings
 from bot.database.models import Conversation, User
 from bot.utils.ollama import OllamaClient, OllamaModelNotFoundError
@@ -63,12 +64,16 @@ class TestOllamaClient:
         assert await ollama_client.model_exists("nonexistent") is False
 
     @pytest.mark.asyncio
-    async def test_generate_error_on_missing_model(self, ollama_client):
-        """Test that generate raises error for missing model."""
+    async def test_chat_error_on_missing_model(self, ollama_client):
+        """Chatting with a model that is not installed fails fast."""
         ollama_client._available_models = []
+        ollama_client._last_model_check = datetime.now().timestamp()
 
         with pytest.raises(OllamaModelNotFoundError):
-            await ollama_client.generate("nonexistent", "test prompt")
+            async for _ in ollama_client.chat_stream(
+                "nonexistent", [{"role": "user", "content": "hi"}]
+            ):
+                pass
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -332,6 +337,7 @@ class TestMessageSplitting:
 async def test_health_check_server():
     """Test health check server."""
     from aiohttp import ClientSession
+
     from bot.utils.health import start_health_server, stop_health_server
 
     mock_ollama = AsyncMock()

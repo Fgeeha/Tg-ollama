@@ -1,6 +1,6 @@
 """Database package."""
-from bot.database.connection import get_session, init_database, close_database
-from bot.database.models import User, Setting, Conversation, ModelUsage, RateLimit
+from bot.database.connection import close_database, get_session, init_database
+from bot.database.models import Conversation, ModelUsage, RateLimit, Setting, User
 
 __all__ = [
     "get_session",

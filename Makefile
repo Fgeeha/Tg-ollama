@@ -15,22 +15,22 @@ help: ## Show this help message
 
 ##@ Development
 
-install: ## Install dependencies using Poetry
-	poetry install
+install: ## Install dependencies with uv
+	uv sync
 
 dev: ## Run bot in development mode
-	poetry run python -m src.bot.main
+	uv run python -m bot.main
 
 lint: ## Run linting checks
-	poetry run ruff check src/
-	poetry run mypy src/
+	uv run ruff check src/
+	uv run mypy src/
 
 format: ## Format code with black
-	poetry run black src/
-	poetry run ruff check --fix src/
+	uv run black src/
+	uv run ruff check --fix src/
 
 test: ## Run tests with coverage
-	poetry run pytest --cov=src --cov-report=term-missing
+	uv run pytest --cov=src --cov-report=term-missing
 
 check: lint test ## Run all checks (lint + test)
 
@@ -74,14 +74,14 @@ clean: stop ## Remove containers and images
 ##@ Database
 
 migrate: ## Run database migrations
-	poetry run alembic upgrade head
+	uv run alembic upgrade head
 
 migrate-create: ## Create new migration
 	@read -p "Enter migration name: " name; \
-	poetry run alembic revision --autogenerate -m "$$name"
+	uv run alembic revision --autogenerate -m "$$name"
 
 migrate-rollback: ## Rollback last migration
-	poetry run alembic downgrade -1
+	uv run alembic downgrade -1
 
 ##@ Production
 

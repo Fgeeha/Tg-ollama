@@ -2,18 +2,19 @@
 import asyncio
 import signal
 import sys
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 import structlog
 from telegram.ext import Application
 
 from bot.config import settings
-from bot.database.connection import init_database, close_database
+from bot.database.connection import close_database, init_database
 from bot.handlers import setup_handlers
 from bot.utils.health import start_health_server, stop_health_server
 from bot.utils.logging import setup_logging
 from bot.utils.ollama import OllamaClient
+from bot.utils.runtime_settings import load_into_settings
 
 logger = structlog.get_logger()
 
@@ -30,11 +31,13 @@ class BotApplication:
     async def initialize(self) -> None:
         """Initialize all bot components."""
         logger.info("Initializing bot application...")
-        
+
         # Initialize database
         await init_database()
         logger.info("Database initialized")
-        
+
+        await load_into_settings()
+
         # Initialize Ollama client
         self.ollama_client = OllamaClient(
             base_url=settings.OLLAMA_HOST,
@@ -42,7 +45,7 @@ class BotApplication:
         )
         await self.ollama_client.verify_connection()
         logger.info("Ollama client initialized", host=settings.OLLAMA_HOST)
-        
+
         # Initialize Telegram application
         # Without concurrent_updates PTB handles updates strictly one by one, so a
         # single slow generation stalls every other user until it finishes.
@@ -52,15 +55,15 @@ class BotApplication:
             .concurrent_updates(settings.MAX_CONCURRENT_UPDATES)
             .build()
         )
-        
+
         # Pass ollama_client to handlers via bot_data
         self.application.bot_data["ollama_client"] = self.ollama_client
         self.application.bot_data["settings"] = settings
-        
+
         # Setup handlers
         setup_handlers(self.application)
         logger.info("Handlers configured")
-        
+
         # Start health check server if enabled
         if settings.HEALTH_CHECK_ENABLED:
             self.health_server = await start_health_server(
@@ -72,7 +75,7 @@ class BotApplication:
     async def start(self) -> None:
         """Start the bot."""
         logger.info("Starting bot...")
-        
+
         # Initialize and start polling
         await self.application.initialize()
         await self.application.start()
@@ -80,7 +83,7 @@ class BotApplication:
             allowed_updates=["message", "callback_query", "inline_query"],
             drop_pending_updates=True
         )
-        
+
         logger.info("Bot started successfully", test_mode=settings.TEST_MODE)
         if settings.TEST_MODE:
             logger.warning("Bot is running in TEST MODE - only admin can interact")
@@ -88,27 +91,27 @@ class BotApplication:
     async def stop(self) -> None:
         """Stop the bot gracefully."""
         logger.info("Stopping bot...")
-        
+
         if self.application:
             await self.application.updater.stop()
             await self.application.stop()
             await self.application.shutdown()
-        
+
         if self.health_server:
             await stop_health_server(self.health_server)
-        
+
         if self.ollama_client:
             await self.ollama_client.close()
-        
+
         await close_database()
-        
+
         logger.info("Bot stopped")
 
     async def run(self) -> None:
         """Run the bot until interrupted."""
         await self.initialize()
         await self.start()
-        
+
         # Wait for shutdown signal
         await self.shutdown_event.wait()
         await self.stop()
@@ -123,11 +126,11 @@ class BotApplication:
 async def lifespan() -> AsyncGenerator[BotApplication, None]:
     """Application lifespan manager."""
     app = BotApplication()
-    
+
     # Register signal handlers
     signal.signal(signal.SIGINT, app.handle_signal)
     signal.signal(signal.SIGTERM, app.handle_signal)
-    
+
     try:
         yield app
     finally:
@@ -137,23 +140,23 @@ async def lifespan() -> AsyncGenerator[BotApplication, None]:
 async def main() -> None:
     """Main function."""
     setup_logging(settings.LOG_LEVEL)
-    
+
     logger.info(
         "Starting Telegram Ollama Bot",
         version="1.0.0",
         admin_id=settings.ADMIN_ID,
         test_mode=settings.TEST_MODE,
     )
-    
+
     try:
         app = BotApplication()
-        
+
         # Register signal handlers
         for sig in (signal.SIGINT, signal.SIGTERM):
             signal.signal(sig, app.handle_signal)
-        
+
         await app.run()
-        
+
     except KeyboardInterrupt:
         logger.info("Received keyboard interrupt")
     except Exception as e:
