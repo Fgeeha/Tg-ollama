@@ -1,4 +1,6 @@
 """User command handlers for model management."""
+from html import escape
+
 import structlog
 from sqlalchemy import select
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -60,7 +62,7 @@ async def list_models(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         )
 
         if current_model:
-            message += f"\n\n<i>Current model: {current_model}</i>"
+            message += f"\n\n<i>Current model: {escape(current_model)}</i>"
 
         await update.message.reply_text(
             message,
@@ -117,7 +119,7 @@ async def switch_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             await session.commit()
 
             await update.message.reply_text(
-                f"✅ Switched to model: <b>{model_name}</b>",
+                f"✅ Switched to model: <b>{escape(model_name)}</b>",
                 parse_mode="HTML"
             )
 
@@ -169,8 +171,8 @@ async def handle_model_selection(update: Update, context: ContextTypes.DEFAULT_T
     # Update the message
     await query.edit_message_text(
         f"✅ Model switched successfully!\n\n"
-        f"Previous: {old_model or 'default'}\n"
-        f"Current: <b>{model_name}</b>\n\n"
+        f"Previous: {escape(old_model or 'default')}\n"
+        f"Current: <b>{escape(model_name)}</b>\n\n"
         f"You can now start chatting with the new model.",
         parse_mode="HTML"
     )
@@ -211,27 +213,29 @@ async def model_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         # Get model information
         info = await ollama_client.show_model_info(model_name)
 
-        # Format the information
-        message = f"🤖 <b>Model: {model_name}</b>\n\n"
+        # Everything below comes from Ollama or from user arguments, so it must be
+        # escaped: chat templates legitimately contain markup such as <|im_start|>,
+        # which Telegram would reject as an unsupported tag.
+        message = f"🤖 <b>Model: {escape(model_name)}</b>\n\n"
 
         # Add model details if available
         if "details" in info:
             details = info["details"]
             if "parameter_size" in details:
-                message += f"📊 Parameters: {details['parameter_size']}\n"
+                message += f"📊 Parameters: {escape(str(details['parameter_size']))}\n"
             if "quantization_level" in details:
-                message += f"🔧 Quantization: {details['quantization_level']}\n"
+                message += f"🔧 Quantization: {escape(str(details['quantization_level']))}\n"
             if "family" in details:
-                message += f"👪 Family: {details['family']}\n"
+                message += f"👪 Family: {escape(str(details['family']))}\n"
 
         # Add license info if available
         if "license" in info:
-            message += f"\n📜 License: {info['license']}\n"
+            message += f"\n📜 License: {escape(str(info['license']))}\n"
 
         # Add template if available (truncated)
         if "template" in info:
             template = info["template"][:200] + "..." if len(info["template"]) > 200 else info["template"]
-            message += f"\n📝 Template preview:\n<code>{template}</code>\n"
+            message += f"\n📝 Template preview:\n<code>{escape(template)}</code>\n"
 
         await update.message.reply_text(message, parse_mode="HTML")
 
@@ -254,14 +258,14 @@ async def current_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
         if user and user.selected_model:
             await update.message.reply_text(
-                f"🤖 Current model: <b>{user.selected_model}</b>\n\n"
+                f"🤖 Current model: <b>{escape(user.selected_model)}</b>\n\n"
                 "Use /models to switch to a different model.",
                 parse_mode="HTML"
             )
         else:
             settings = context.application.bot_data["settings"]
             await update.message.reply_text(
-                f"🤖 Using default model: <b>{settings.DEFAULT_MODEL}</b>\n\n"
+                f"🤖 Using default model: <b>{escape(settings.DEFAULT_MODEL)}</b>\n\n"
                 "Use /models to select a different model.",
                 parse_mode="HTML"
             )

@@ -333,6 +333,55 @@ class TestMessageSplitting:
         assert not chunks[0].endswith("li")  # split on a newline, not mid-word
 
 
+class TestHtmlEscaping:
+    """Untrusted text must not reach Telegram as raw HTML."""
+
+    # Telegram accepts only this tag whitelist; anything else fails the message.
+    ALLOWED_TAGS = (
+        "b", "i", "u", "s", "a", "code", "pre",
+        "tg-spoiler", "blockquote", "em", "strong", "del", "ins",
+    )
+
+    @classmethod
+    def stray_tags(cls, text: str) -> list[str]:
+        """Return anything Telegram would read as an unsupported tag."""
+        import re
+
+        stripped = re.sub(
+            r"</?(?:" + "|".join(cls.ALLOWED_TAGS) + r")\b[^>]*>", "", text
+        )
+        return re.findall(r"<[^>]*>?", stripped)
+
+    def test_history_escapes_message_content(self):
+        """A message containing markup used to break the whole /history reply."""
+        from html import escape
+
+        content = "look <script>alert(1)</script> & <|im_start|>"
+        rendered = f"👤 <b>User (10:00):</b>\n{escape(content)}\n\n"
+
+        assert self.stray_tags(rendered) == []
+        assert "&lt;script&gt;" in rendered
+
+    def test_model_template_escaped(self):
+        """Real ChatML templates contain <|im_start|>, which is not a valid tag."""
+        from html import escape
+
+        template = "{{- if .System }}<|im_start|>system\n{{ .System }}"
+
+        assert self.stray_tags(f"<code>{template}</code>") != []
+        assert self.stray_tags(f"<code>{escape(template)}</code>") == []
+
+    def test_handlers_escape_untrusted_values(self):
+        """Guard against a future edit dropping escape() from these call sites."""
+        from pathlib import Path
+
+        chat_src = Path(__file__).parent.parent / "bot" / "handlers" / "chat.py"
+        models_src = Path(__file__).parent.parent / "bot" / "handlers" / "models.py"
+
+        assert "escape(content)" in chat_src.read_text()
+        assert "escape(template)" in models_src.read_text()
+
+
 @pytest.mark.asyncio
 async def test_health_check_server():
     """Test health check server."""

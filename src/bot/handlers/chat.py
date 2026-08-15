@@ -1,6 +1,7 @@
 """Chat handler for conversations with Ollama models."""
 import base64
 import time
+from html import escape
 from io import BytesIO
 from typing import Any
 
@@ -424,6 +425,8 @@ async def show_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         content = msg.message_content[:200] + "..." if len(msg.message_content) > 200 else msg.message_content
         time_str = msg.created_at.strftime("%H:%M")
 
-        history += f"{role_emoji} <b>{msg.message_role.title()} ({time_str}):</b>\n{content}\n\n"
+        # Message text is arbitrary user/model output: a stray "<" would make
+        # Telegram reject the whole reply as broken HTML.
+        history += f"{role_emoji} <b>{escape(msg.message_role.title())} ({time_str}):</b>\n{escape(content)}\n\n"
 
     await update.message.reply_text(history, parse_mode="HTML")
