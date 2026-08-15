@@ -1,331 +1,142 @@
-# Telegram Bot with Ollama Integration
+<p align="center">
+  <img src="./assets/readme/hero.svg" width="100%"
+       alt="Tg-ollama — your own Telegram assistant, answering from a model that never leaves your machine">
+</p>
 
-[![Docker](https://github.com/Fgeeha/Tg-ollama/actions/workflows/docker.yml/badge.svg)](https://github.com/Fgeeha/Tg-ollama/actions/workflows/docker.yml)
+<p align="center">
+  <b>English</b> · <a href="README.ru.md">Русский</a>
+</p>
 
-A powerful Telegram bot that integrates with Ollama for AI-powered conversations, featuring user management, model selection, and comprehensive admin controls.
+<p align="center">
+  <a href="https://github.com/Fgeeha/Tg-ollama/actions/workflows/docker.yml"><img src="https://github.com/Fgeeha/Tg-ollama/actions/workflows/docker.yml/badge.svg" alt="Docker build status"></a>
+  <img src="https://img.shields.io/badge/python-3.12+-3776AB?logo=python&logoColor=white" alt="Python 3.12+">
+</p>
 
-## Features
+Talk to your own Ollama models from Telegram. Answers stream in token by token,
+conversations keep their context, and every request stays on the machine running
+Ollama — no cloud provider, no per-token bill.
 
-### Core Functionality
-- 🤖 **Ollama Integration**: Seamlessly interact with locally or remotely hosted Ollama models
-- 💬 **Streaming Responses**: Real-time message streaming for better user experience
-- 🔄 **Model Selection**: Choose from available pre-downloaded Ollama models
-- 🖼️ **Image Input**: Send a photo (with an optional caption) to a vision-capable model such as `llava`; the bot checks the selected model's `vision` capability first and tells you if it is unsupported
-- 📝 **Conversation Context**: Maintains conversation history with intelligent context management
-- ⏱️ **Rate Limiting**: Configurable rate limiting to prevent abuse
+## Try it in three commands
 
-### Access Control
-- 👑 **Admin Management**: Full admin control over user authorization
-- 🔒 **Test Mode**: Admin-only interaction mode for testing
-- 👥 **User Authorization**: Database-backed user management system
-- 📊 **Usage Statistics**: Track model usage and response times
-
-### Technical Features
-- 🐳 **Docker Support**: Full containerization with multi-stage builds
-- 📦 **Poetry Package Management**: Modern Python dependency management
-- 🗄️ **SQLite/PostgreSQL**: Flexible database options
-- 📈 **Health Checks**: Built-in health monitoring endpoints
-- 📝 **Structured Logging**: JSON-formatted logs for production
-
-## Requirements
-
-- Python 3.12+
-- Docker & Docker Compose (optional)
-- Ollama installed and running
-- Telegram Bot Token (from @BotFather)
-
-## Quick Start
-
-### 1. Clone the Repository
+You need [Ollama](https://ollama.com) running with at least one model pulled, and
+a bot token from [@BotFather](https://t.me/BotFather).
 
 ```bash
-git clone https://github.com/fgeeha/tg-ollama.git
-cd tg-ollama
+cp .env.example .env          # add BOT_TOKEN and ADMIN_ID
+uv sync
+uv run python -m bot.main
 ```
 
-### 2. Configure Environment
+Send the bot a message and the reply starts appearing before the model has
+finished thinking. `/models` switches between everything `ollama list` shows you.
 
-Copy the example environment file and configure:
+## How a message is answered
 
-```bash
-cp .env.example .env
-```
+<p align="center">
+  <img src="./assets/readme/flow.svg" width="100%"
+       alt="A Telegram message passes access control and rate limiting, the bot loads recent history from SQLite, sends it to Ollama, and streams the reply back into the same message">
+</p>
 
-Edit `.env` with your configuration:
+The bot checks that the sender is authorised and within their rate limit, loads
+recent history within a token budget, streams the answer from Ollama, and edits
+it into the message already on screen. History and users live in SQLite; the
+model runs wherever `OLLAMA_HOST` points.
 
-```env
-# Required
-BOT_TOKEN=your_telegram_bot_token
-ADMIN_ID=your_telegram_user_id
-OLLAMA_HOST=http://localhost:11434
+## What it does
 
-# Optional
-DATABASE_URL=sqlite:///data/bot.db
-TEST_MODE=false
-LOG_LEVEL=INFO
-```
+| Capability | What that means in practice |
+| --- | --- |
+| **Streaming replies** | The message updates as tokens arrive, and `/stop` cancels a generation you no longer want. |
+| **Any installed model** | Pick per user from the models Ollama reports; `/model_info` shows parameters, quantisation and family. |
+| **Images** | Send a photo to a vision model such as `llava`. The bot checks the model's `vision` capability first and says so when it is missing. |
+| **Context that fits** | History is trimmed to a token budget, so a long conversation does not silently overflow the model's window. |
+| **Custom instructions** | `/system` sets a per-user system prompt. |
+| **Access control** | Only users the admin adds can talk to the bot; test mode restricts it to the admin and survives a restart. |
+| **Rate limiting** | Per-user message quotas, with the admin exempt. |
+| **Long answers** | Replies over Telegram's 4096-character limit are split instead of being cut off. |
 
-### 3. Install Ollama Models
+## Commands
 
-Ensure Ollama is running and pull desired models:
+**Everyone**
 
-```bash
-ollama pull llama2
-ollama pull codellama
-ollama pull mistral
-```
+| Command | Purpose |
+| --- | --- |
+| `/start`, `/help`, `/status` | Register, show help, check bot and Ollama health |
+| `/models`, `/switch_model`, `/current_model` | List, switch and show the active model |
+| `/model_info [model]` | Parameters, quantisation, family and template |
+| `/clear`, `/history`, `/regenerate` | Reset the conversation, show it, retry the last answer |
+| `/stop` | Cancel the generation in progress |
+| `/system [text]` | Show or set your system prompt |
 
-### 4. Run the Bot
+**Admin only**
 
-#### Using Docker (Recommended)
-
-```bash
-# Build and run
-make run
-
-# View logs
-make logs
-
-# Stop
-make stop
-```
-
-#### Using Poetry
-
-```bash
-# Install dependencies
-poetry install
-
-# Run the bot
-poetry run python -m src.bot.main
-```
-
-## Usage
-
-### User Commands
-
-| Command | Description |
-|---------|-------------|
-| `/start` | Start the bot and see welcome message |
-| `/help` | Show available commands |
-| `/status` | Check bot and Ollama status |
-| `/models` | List and select available models |
-| `/switch_model <name>` | Switch to a specific model |
-| `/current_model` | Show currently selected model |
-| `/model_info [name]` | Get detailed model information |
-| `/clear` | Clear conversation context |
-| `/regenerate` | Regenerate the last response |
-| `/history` | Show recent conversation history |
-
-### Admin Commands
-
-| Command | Description |
-|---------|-------------|
-| `/add_user <user_id>` | Authorize a new user |
-| `/remove_user <user_id>` | Revoke user access |
-| `/list_users` | List all authorized users |
-| `/test_mode [on/off]` | Toggle test mode |
-| `/stats` | View usage statistics |
-| `/clear_history [user_id/all]` | Clear conversation history |
-| `/broadcast <message>` | Send message to all users |
-
-### Chatting
-
-Simply send any message to the bot to start chatting with the selected AI model. The bot maintains context across messages for coherent conversations.
+| Command | Purpose |
+| --- | --- |
+| `/add_user`, `/remove_user`, `/list_users` | Manage who may use the bot |
+| `/stats` | Requests and response times per model |
+| `/test_mode` | Restrict the bot to the admin |
+| `/clear_history` | Wipe stored conversations |
+| `/broadcast` | Message every active user |
 
 ## Configuration
 
-### Environment Variables
+Only the first two are required.
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `BOT_TOKEN` | - | Telegram bot token (required) |
-| `ADMIN_ID` | - | Admin Telegram user ID (required) |
-| `OLLAMA_HOST` | `http://localhost:11434` | Ollama API endpoint |
-| `OLLAMA_TIMEOUT` | `60` | Ollama request timeout (seconds) |
-| `DATABASE_URL` | `sqlite:///data/bot.db` | Database connection string |
-| `TEST_MODE` | `false` | Enable test mode (admin only) |
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `BOT_TOKEN` | — | Token from @BotFather |
+| `ADMIN_ID` | — | Your Telegram user ID |
+| `OLLAMA_HOST` | `http://localhost:11434` | Where Ollama listens |
+| `OLLAMA_TIMEOUT` | `60` | Seconds to wait for data; a stalled model is dropped |
+| `DEFAULT_MODEL` | `llama2` | Model for users who never chose one |
+| `MAX_CONTEXT_TOKENS` | `3000` | Token budget for conversation history |
+| `OLLAMA_KEEP_ALIVE` | `10m` | How long Ollama keeps the model loaded |
+| `OLLAMA_TEMPERATURE` | model's own | Sampling temperature |
+| `OLLAMA_NUM_CTX` | model's own | Context window override |
+| `RATE_LIMIT_MESSAGES` / `RATE_LIMIT_WINDOW` | `10` / `60` | Messages allowed per window, in seconds |
+| `MAX_CONCURRENT_UPDATES` | `32` | Updates handled in parallel, so one slow answer does not block other users |
+| `DATABASE_URL` | `sqlite:///data/bot.db` | SQLite or PostgreSQL |
+| `TEST_MODE` | `false` | Admin-only mode |
 | `LOG_LEVEL` | `INFO` | Logging level |
-| `MAX_CONTEXT_LENGTH` | `4096` | Maximum context length |
-| `DEFAULT_MODEL` | `llama2` | Default Ollama model |
-| `RATE_LIMIT_MESSAGES` | `10` | Messages per rate limit window |
-| `RATE_LIMIT_WINDOW` | `60` | Rate limit window (seconds) |
-| `HEALTH_CHECK_ENABLED` | `true` | Enable health check endpoint |
-| `HEALTH_CHECK_PORT` | `8080` | Health check server port |
+| `HEALTH_CHECK_ENABLED` / `HEALTH_CHECK_PORT` | `true` / `8080` | `/health` endpoint |
 
-### Database Configuration
+## Docker
 
-#### SQLite (Default)
-```env
-DATABASE_URL=sqlite:///data/bot.db
+```bash
+docker compose up -d
 ```
 
-#### PostgreSQL
+Compose mounts `./data`, so the database survives a rebuild. If Ollama runs on
+the host rather than in the compose network, point the bot at it:
+
 ```env
-DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/tg_ollama_bot
+OLLAMA_HOST=http://host.docker.internal:11434
+```
+
+Images are published to GHCR on every push to `Master`:
+
+```bash
+docker run -d --env-file .env -v ./data:/app/data ghcr.io/fgeeha/tg-ollama:latest
 ```
 
 ## Development
 
-### Project Structure
-
-```
-tg-ollama-bot/
-├── src/
-│   ├── bot/
-│   │   ├── main.py              # Entry point
-│   │   ├── config.py            # Configuration
-│   │   ├── decorators.py        # Auth & rate limiting
-│   │   ├── database/            # Database models & connection
-│   │   │   ├── models.py
-│   │   │   └── connection.py
-│   │   ├── handlers/            # Command handlers
-│   │   │   ├── admin.py
-│   │   │   ├── chat.py
-│   │   │   ├── common.py
-│   │   │   └── models.py
-│   │   └── utils/               # Utilities
-│   │       ├── context.py       # Conversation context
-│   │       ├── health.py        # Health checks
-│   │       ├── logging.py       # Logging setup
-│   │       └── ollama.py        # Ollama client
-│   └── tests/                   # Test suite
-├── Dockerfile                   # Docker configuration
-├── Makefile                     # Build & deploy commands
-├── pyproject.toml              # Poetry configuration
-└── README.md                   # Documentation
-```
-
-### Running Tests
-
 ```bash
-# Run all tests
-make test
-
-# Run with coverage
-poetry run pytest --cov=src --cov-report=term-missing
-
-# Run specific test
-poetry run pytest src/tests/test_bot.py::TestOllamaClient
+uv sync              # install, including dev dependencies
+uv run pytest -q     # run the test suite
+uv run ruff check src/
 ```
 
-### Code Quality
+Schema migrations run automatically at startup, including on databases created
+before migrations existed.
 
-```bash
-# Format code
-make format
+## Notes and limits
 
-# Run linting
-make lint
-
-# Type checking
-poetry run mypy src/
-```
-
-### Database Migrations
-
-```bash
-# Create migration
-make migrate-create
-
-# Apply migrations
-make migrate
-
-# Rollback
-make migrate-rollback
-```
-
-## Deployment
-
-### Docker Deployment
-
-1. Build the image:
-```bash
-make build
-```
-
-2. Run with docker-compose:
-```yaml
-services:
-  bot:
-    build: .
-    env_file: .env
-    volumes:
-      - ./data:/app/data
-    restart: unless-stopped
-    
-  ollama:
-    image: ollama/ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-      
-volumes:
-  ollama_data:
-```
-
-### Production Considerations
-
-1. **Security**:
-   - Use environment variables for sensitive data
-   - Enable HTTPS for Ollama if exposed
-   - Implement proper firewall rules
-   - Regular security updates
-
-2. **Monitoring**:
-   - Health endpoint: `http://localhost:8080/health`
-   - Metrics endpoint: `http://localhost:8080/metrics`
-   - Configure Prometheus/Grafana for metrics
-   - Set up error tracking (Sentry)
-
-3. **Backup**:
-```bash
-# Backup database
-make backup
-
-# Restore from backup
-make restore
-```
-
-4. **Scaling**:
-   - Use PostgreSQL for production
-   - Implement Redis for caching
-   - Consider message queue for high load
-   - Horizontal scaling with load balancer
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Ollama Connection Failed**
-   - Ensure Ollama is running: `ollama serve`
-   - Check OLLAMA_HOST configuration
-   - Verify network connectivity
-
-2. **Model Not Found**
-   - Pull the model: `ollama pull <model_name>`
-   - Check available models: `ollama list`
-
-3. **Database Errors**
-   - Check DATABASE_URL configuration
-   - Ensure write permissions for SQLite
-   - Run migrations: `make migrate`
-
-4. **Rate Limiting**
-   - Adjust RATE_LIMIT_MESSAGES and RATE_LIMIT_WINDOW
-   - Admin users bypass rate limits
-
-### Debug Mode
-
-Enable debug logging:
-```env
-LOG_LEVEL=DEBUG
-```
-
-View container logs:
-```bash
-make logs
-```
-
-
+- Vision needs a model that reports the `vision` capability; the bot refuses
+  rather than sending an image a text model cannot read.
+- Earlier images are not resent with later messages — the model is told a
+  picture was shown but is no longer attached.
+- One generation per user at a time; a second message waits rather than
+  interleaving with the first.
+- SQLite is the default and is fine for a personal bot. Point `DATABASE_URL` at
+  PostgreSQL for anything larger.

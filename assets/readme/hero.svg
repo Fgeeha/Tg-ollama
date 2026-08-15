@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="1200" height="360" viewBox="0 0 1200 360"
+     role="img" aria-labelledby="title desc">
+  <title id="title">Tg-ollama</title>
+  <desc id="desc">Tg-ollama: a Telegram bot that streams answers from a local Ollama model. A chat panel shows a question, a reply being streamed token by token, and the model name with its response time.</desc>
+
+  <rect width="1200" height="360" rx="26" fill="#0B1016"/>
+
+  <!-- title block -->
+  <g id="title-block" transform="translate(56 0)">
+    <text x="0" y="84" font-family="ui-monospace,SFMono-Regular,Menlo,monospace"
+          font-size="18" letter-spacing="2.4" fill="#2AABEE">SELF-HOSTED · TELEGRAM × OLLAMA</text>
+
+    <text x="0" y="158" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif"
+          font-size="62" font-weight="700" fill="#E6EDF3">Tg-ollama</text>
+
+    <text x="0" y="208" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif"
+          font-size="22" fill="#ADBAC7">Your own Telegram assistant, answering from</text>
+    <text x="0" y="240" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif"
+          font-size="22" fill="#ADBAC7">a model that never leaves your machine.</text>
+
+    <!-- repository metadata -->
+    <g transform="translate(0 280)" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="18">
+      <rect x="0" y="0" width="86" height="32" rx="8" fill="#151B23" stroke="#242C36"/>
+      <text x="16" y="22" fill="#8B949E">uv</text>
+
+      <rect x="98" y="0" width="104" height="32" rx="8" fill="#151B23" stroke="#242C36"/>
+      <text x="114" y="22" fill="#8B949E">Docker</text>
+
+      <rect x="214" y="0" width="90" height="32" rx="8" fill="#151B23" stroke="#242C36"/>
+      <text x="230" y="22" fill="#8B949E">GHCR</text>
+
+      <rect x="316" y="0" width="128" height="32" rx="8" fill="#151B23" stroke="#242C36"/>
+      <text x="332" y="22" fill="#8B949E">Python 3.12</text>
+    </g>
+  </g>
+
+  <!-- real project material: a streaming exchange -->
+  <g id="chat-specimen" transform="translate(690 56)">
+    <rect x="0" y="0" width="454" height="248" rx="16" fill="#111820" stroke="#242C36" stroke-width="1.5"/>
+
+    <!-- model chip + live indicator -->
+    <rect x="20" y="18" width="146" height="30" rx="15" fill="#151B23" stroke="#242C36"/>
+    <text x="34" y="38" font-family="ui-monospace,SFMono-Regular,Menlo,monospace"
+          font-size="18" fill="#ADBAC7">qwen2.5:7b</text>
+    <circle cx="188" cy="33" r="5" fill="#3FB950"/>
+    <text x="202" y="39" font-family="ui-monospace,SFMono-Regular,Menlo,monospace"
+          font-size="18" fill="#3FB950">streaming</text>
+
+    <!-- user message -->
+    <rect x="118" y="62" width="316" height="44" rx="14" fill="#2AABEE"/>
+    <text x="136" y="90" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif"
+          font-size="20" fill="#04121C">Explain Mixture of Experts</text>
+
+    <!-- model reply, mid-stream -->
+    <rect x="20" y="118" width="348" height="76" rx="14" fill="#1A2029"/>
+    <text x="38" y="146" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif"
+          font-size="20" fill="#E6EDF3">It routes every token to a few</text>
+    <text x="38" y="176" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif"
+          font-size="20" fill="#E6EDF3">specialised sub-networks</text>
+    <!-- motif: the block caret that marks a reply still being streamed -->
+    <rect x="276" y="160" width="10" height="22" fill="#3FB950"/>
+
+    <text x="20" y="226" font-family="ui-monospace,SFMono-Regular,Menlo,monospace"
+          font-size="18" fill="#6E7A87">178 ms · 7 chunks · streamed</text>
+  </g>
+</svg>
