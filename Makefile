@@ -1,48 +1,69 @@
-.PHONY: help build run stop clean test logs shell dev install lint format check migrate
+# Единая точка входа для операций проекта.
+# Зависимости ставятся только через uv — не pip и не poetry.
+#
+# Docker-цели используют "docker build"/"docker run" напрямую, а не
+# docker-compose.yml (он есть в репозитории, но не подключён к Makefile —
+# см. README про "docker compose up -d" как альтернативный путь запуска).
 
-# Variables
-PROJECT_NAME = tg-ollama-bot
-DOCKER_IMAGE = $(PROJECT_NAME):latest
-DOCKER_CONTAINER = $(PROJECT_NAME)-container
-ENV_FILE = .env
+.DEFAULT_GOAL := help
 
-# Default target
-help: ## Show this help message
-	@echo 'Usage: make [target]'
-	@echo ''
-	@echo 'Available targets:'
-	@awk 'BEGIN {FS = ":.*##"; printf "\033[36m\033[0m"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+PROJECT_NAME    := tg-ollama-bot
+DOCKER_IMAGE    := $(PROJECT_NAME):latest
+DOCKER_CONTAINER := $(PROJECT_NAME)-container
+ENV_FILE        := .env
 
-##@ Development
+.PHONY: help install run lint format test check \
+        migrate migration migrate-rollback \
+        build up-local restart-local down-local logs shell clean \
+        deploy backup restore \
+        status health stats
 
-install: ## Install dependencies with uv
+help: ## Показать список целей
+	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) \
+	  | awk 'BEGIN {FS = ":.*## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
+
+# --- Разработка ---------------------------------------------------------------
+
+install: ## Установить зависимости (uv sync)
 	uv sync
 
-dev: ## Run bot in development mode
+run: ## Запустить бота локально
 	uv run python -m bot.main
 
-lint: ## Run linting checks
+lint: ## Проверить код (ruff + mypy)
 	uv run ruff check src/
 	uv run mypy src/
 
-format: ## Format code with black
+format: ## Отформатировать код (black + ruff --fix)
 	uv run black src/
 	uv run ruff check --fix src/
 
-test: ## Run tests with coverage
+test: ## Прогнать тесты с покрытием
 	uv run pytest --cov=src --cov-report=term-missing
 
-check: lint test ## Run all checks (lint + test)
+check: lint test ## Полная проверка перед коммитом
 
-##@ Docker
+# --- База данных ----------------------------------------------------------------
 
-build: ## Build Docker image
+migrate: ## Применить миграции
+	uv run alembic upgrade head
+
+migration: ## Создать ревизию: make migration m="описание"
+	@test -n "$(m)" || { echo "Укажите описание: make migration m=\"добавил users\""; exit 1; }
+	uv run alembic revision --autogenerate -m "$(m)"
+
+migrate-rollback: ## Откатить последнюю миграцию
+	uv run alembic downgrade -1
+
+# --- Docker -----------------------------------------------------------------------
+
+build: ## Собрать Docker-образ
 	docker build -t $(DOCKER_IMAGE) .
 
-run: build ## Start container (builds if needed)
+up-local: build ## Поднять контейнер (со сборкой при необходимости)
 	@if [ ! -f $(ENV_FILE) ]; then \
-		echo "Error: $(ENV_FILE) file not found!"; \
-		echo "Please create it from .env.example"; \
+		echo "Ошибка: файл $(ENV_FILE) не найден!"; \
+		echo "Создайте его из .env.example"; \
 		exit 1; \
 	fi
 	docker run -d \
@@ -51,71 +72,62 @@ run: build ## Start container (builds if needed)
 		-v $(PWD)/data:/app/data \
 		--restart unless-stopped \
 		$(DOCKER_IMAGE)
-	@echo "Container started: $(DOCKER_CONTAINER)"
+	@echo "Контейнер запущен: $(DOCKER_CONTAINER)"
 
-stop: ## Stop container
+down-local: ## Остановить контейнер
 	docker stop $(DOCKER_CONTAINER) || true
 	docker rm $(DOCKER_CONTAINER) || true
-	@echo "Container stopped and removed: $(DOCKER_CONTAINER)"
+	@echo "Контейнер остановлен и удалён: $(DOCKER_CONTAINER)"
 
-restart: stop run ## Restart container
+restart-local: down-local up-local ## Перезапустить контейнер
 
-logs: ## View container logs
+logs: ## Логи контейнера (follow)
 	docker logs -f $(DOCKER_CONTAINER)
 
-shell: ## Open shell in running container
+shell: ## Shell внутри запущенного контейнера
 	docker exec -it $(DOCKER_CONTAINER) /bin/bash
 
-clean: stop ## Remove containers and images
-	docker rmi $(DOCKER_IMAGE) || true
-	rm -rf data/*.db
-	@echo "Cleanup complete"
+# --- Прод -------------------------------------------------------------------------
 
-##@ Database
-
-migrate: ## Run database migrations
-	uv run alembic upgrade head
-
-migrate-create: ## Create new migration
-	@read -p "Enter migration name: " name; \
-	uv run alembic revision --autogenerate -m "$$name"
-
-migrate-rollback: ## Rollback last migration
-	uv run alembic downgrade -1
-
-##@ Production
-
-deploy: build ## Deploy to production (example)
-	@echo "Deploying $(DOCKER_IMAGE) to production..."
-	# Add your deployment commands here
+deploy: build ## Деплой в прод (пример, требует доработки под реестр)
+	@echo "Деплой $(DOCKER_IMAGE) в прод..."
 	# docker tag $(DOCKER_IMAGE) registry.example.com/$(DOCKER_IMAGE)
 	# docker push registry.example.com/$(DOCKER_IMAGE)
 
-backup: ## Backup database
+# --- Резервное копирование ---------------------------------------------------------
+
+backup: ## Бэкап базы данных
 	@mkdir -p backups
 	@timestamp=$$(date +%Y%m%d_%H%M%S); \
 	docker exec $(DOCKER_CONTAINER) sqlite3 /app/data/bot.db ".backup /app/data/backup_$$timestamp.db" && \
 	docker cp $(DOCKER_CONTAINER):/app/data/backup_$$timestamp.db ./backups/ && \
-	echo "Backup created: ./backups/backup_$$timestamp.db"
+	echo "Бэкап создан: ./backups/backup_$$timestamp.db"
 
-restore: ## Restore database from backup
-	@read -p "Enter backup filename (from backups/ directory): " filename; \
+restore: ## Восстановить базу данных из бэкапа
+	@read -p "Введите имя файла бэкапа (из каталога backups/): " filename; \
 	if [ -f "./backups/$$filename" ]; then \
 		docker cp ./backups/$$filename $(DOCKER_CONTAINER):/app/data/restore.db && \
 		docker exec $(DOCKER_CONTAINER) mv /app/data/bot.db /app/data/bot.db.old && \
 		docker exec $(DOCKER_CONTAINER) mv /app/data/restore.db /app/data/bot.db && \
-		echo "Database restored from $$filename"; \
+		echo "База восстановлена из $$filename"; \
 	else \
-		echo "Backup file not found: ./backups/$$filename"; \
+		echo "Файл бэкапа не найден: ./backups/$$filename"; \
 	fi
 
-##@ Monitoring
+# --- Мониторинг --------------------------------------------------------------------
 
-status: ## Check container status
+status: ## Статус контейнера
 	@docker ps -f name=$(DOCKER_CONTAINER) --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
-health: ## Check health status
+health: ## Статус healthcheck
 	@docker inspect $(DOCKER_CONTAINER) --format='{{json .State.Health}}' | python -m json.tool
 
-stats: ## Show container resource usage
+stats: ## Потребление ресурсов контейнером
 	docker stats $(DOCKER_CONTAINER) --no-stream
+
+# --- Прочее -------------------------------------------------------------------------
+
+clean: down-local ## Удалить контейнеры, образ и локальную БД
+	docker rmi $(DOCKER_IMAGE) || true
+	rm -rf data/*.db
+	@echo "Очистка завершена"
