@@ -20,6 +20,49 @@ logger = structlog.get_logger()
 
 IMAGE_PLACEHOLDER_PREFIX = "[image]"
 
+# Telegram rejects text messages longer than 4096 characters.
+TELEGRAM_MAX_MESSAGE_LENGTH = 4096
+
+
+def split_message(text: str, limit: int = TELEGRAM_MAX_MESSAGE_LENGTH) -> list[str]:
+    """Split text into Telegram-sized chunks, preferring line then word boundaries."""
+    if len(text) <= limit:
+        return [text]
+
+    chunks: list[str] = []
+    remaining = text
+    while len(remaining) > limit:
+        window = remaining[:limit]
+        # Prefer a newline, then a space, else hard-cut mid-token.
+        split_at = window.rfind("\n")
+        if split_at <= 0:
+            split_at = window.rfind(" ")
+        if split_at <= 0:
+            split_at = limit
+        chunks.append(remaining[:split_at])
+        remaining = remaining[split_at:].lstrip("\n")
+    if remaining:
+        chunks.append(remaining)
+    return chunks
+
+
+async def _deliver_response(update: Update, bot_message, text: str) -> None:
+    """Send the final response, splitting it when it exceeds Telegram's limit."""
+    chunks = split_message(text)
+
+    if bot_message is not None:
+        try:
+            await bot_message.edit_text(chunks[0])
+        except Exception as err:
+            # Never swallow this silently: it is how long answers used to vanish.
+            logger.warning("Failed to edit streamed message", error=str(err))
+            await update.message.reply_text(chunks[0])
+    else:
+        await update.message.reply_text(chunks[0])
+
+    for chunk in chunks[1:]:
+        await update.message.reply_text(chunk)
+
 
 async def _process_chat_interaction(
     update: Update,
@@ -120,7 +163,12 @@ async def _process_chat_interaction(
                     bot_message = await update.message.reply_text(response_text + "...")
                     message_sent = True
                     last_edit_len = len(response_text)
-                elif bot_message and len(response_text) - last_edit_len >= 100:
+                elif (
+                    bot_message
+                    and len(response_text) - last_edit_len >= 100
+                    # Past the limit the edit can only fail; the final send splits it.
+                    and len(response_text) + 3 <= TELEGRAM_MAX_MESSAGE_LENGTH
+                ):
                     last_edit_len = len(response_text)
                     try:
                         await bot_message.edit_text(response_text + "...")
@@ -136,14 +184,7 @@ async def _process_chat_interaction(
                     )
                     return
 
-                # Final update
-                if bot_message:
-                    try:
-                        await bot_message.edit_text(response_text)
-                    except Exception:
-                        pass
-                elif not message_sent:
-                    await update.message.reply_text(response_text)
+                await _deliver_response(update, bot_message, response_text)
 
                 # Save assistant response and usage stats
                 async with get_session() as session:
@@ -269,24 +310,15 @@ async def clear_context(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     conv_context = ConversationContext(user_id, "", 0)
     await conv_context.clear()
 
-    # Clear from database (keep last 10 for history)
+    # Delete the user's conversation rows. Clearing only the in-memory cache is
+    # not enough: get_context() reloads the same history straight back from the
+    # database, so the next message would still carry the old conversation.
     async with get_session() as session:
-        # Get all conversations for user
-        result = await session.execute(
-            select(Conversation.id)
-            .where(Conversation.user_id == user_id)
-            .order_by(Conversation.created_at.desc())
-            .offset(10)  # Keep last 10 messages
+        from sqlalchemy import delete
+        await session.execute(
+            delete(Conversation).where(Conversation.user_id == user_id)
         )
-        old_ids = [row[0] for row in result]
-
-        if old_ids:
-            # Delete old conversations
-            from sqlalchemy import delete
-            await session.execute(
-                delete(Conversation).where(Conversation.id.in_(old_ids))
-            )
-            await session.commit()
+        await session.commit()
 
     await update.message.reply_text(
         "🧹 Conversation context cleared!\n"
@@ -310,7 +342,7 @@ async def regenerate_response(update: Update, context: ContextTypes.DEFAULT_TYPE
                 (Conversation.user_id == user_id) &
                 (Conversation.message_role == "user")
             )
-            .order_by(Conversation.created_at.desc())
+            .order_by(Conversation.id.desc())
             .limit(1)
         )
         last_user_msg = result.scalar_one_or_none()
@@ -340,9 +372,9 @@ async def regenerate_response(update: Update, context: ContextTypes.DEFAULT_TYPE
             .where(
                 (Conversation.user_id == user_id) &
                 (Conversation.message_role == "assistant") &
-                (Conversation.created_at > last_user_msg.created_at)
+                (Conversation.id > last_user_msg.id)
             )
-            .order_by(Conversation.created_at.desc())
+            .order_by(Conversation.id.desc())
             .limit(1)
         )
         last_assistant_msg = result.scalar_one_or_none()
@@ -371,7 +403,7 @@ async def show_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         result = await session.execute(
             select(Conversation)
             .where(Conversation.user_id == user_id)
-            .order_by(Conversation.created_at.desc())
+            .order_by(Conversation.id.desc())
             .limit(10)
         )
         messages = result.scalars().all()

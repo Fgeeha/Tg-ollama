@@ -268,7 +268,10 @@ class OllamaClient:
                     "POST",
                     "/api/chat",
                     json=payload,
-                    timeout=httpx.Timeout(None),  # без таймаута для стрима
+                    # Per-operation timeout, not a total one: a long generation keeps
+                    # streaming chunks, while a hung Ollama trips the read timeout.
+                    # timeout=None here meant OLLAMA_TIMEOUT never applied to streaming.
+                    timeout=httpx.Timeout(self.timeout),
             ) as response:
                 response.raise_for_status()
 

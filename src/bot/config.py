@@ -62,7 +62,12 @@ class Settings(BaseSettings):
         default=60,
         description="Rate limit window in seconds"
     )
-    
+
+    MAX_CONCURRENT_UPDATES: int = Field(
+        default=32,
+        description="Updates processed in parallel; 1 makes one slow user block everyone"
+    )
+
     # Health Check
     HEALTH_CHECK_ENABLED: bool = Field(
         default=True,

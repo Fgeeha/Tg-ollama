@@ -30,10 +30,12 @@ class ConversationContext:
         
         # Load from database
         async with get_session() as session:
+            # Order by id: created_at only has second resolution in SQLite, so
+            # messages sent within the same second tie and come back shuffled.
             result = await session.execute(
                 select(Conversation)
                 .where(Conversation.user_id == self.user_id)
-                .order_by(Conversation.created_at.desc())
+                .order_by(Conversation.id.desc())
                 .limit(message_limit)
             )
             db_messages = result.scalars().all()

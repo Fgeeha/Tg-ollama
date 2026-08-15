@@ -233,6 +233,101 @@ class TestConversationContext:
         assert total_length <= 100
 
 
+class TestHistoryOrdering:
+    """C1/C2: history must come back chronologically, and /clear must clear it."""
+
+    @pytest.fixture
+    async def db(self, tmp_path, monkeypatch):
+        """Initialise a throwaway SQLite database for the conversation tables."""
+        import bot.database.connection as conn
+        from bot.config import settings
+
+        monkeypatch.setattr(settings, "DATABASE_URL", f"sqlite:///{tmp_path}/t.db")
+        await conn.init_database()
+        yield
+        await conn.close_database()
+
+    @pytest.mark.asyncio
+    async def test_same_second_messages_keep_order(self, db):
+        """created_at only has second resolution, so ordering must use id."""
+        from bot.database import Conversation, get_session
+        from bot.utils.context import ConversationContext
+
+        user_id = 4242
+        async with get_session() as session:
+            for i in range(4):
+                session.add(Conversation(
+                    user_id=user_id, model_name="m",
+                    message_role="user", message_content=f"msg{i}",
+                ))
+            await session.commit()
+
+        ConversationContext._contexts.clear()
+        messages = await ConversationContext(user_id, "m").get_context()
+
+        assert [m["content"] for m in messages] == ["msg0", "msg1", "msg2", "msg3"]
+
+    @pytest.mark.asyncio
+    async def test_clear_context_empties_history(self, db):
+        """Clearing only the in-memory cache let history reload from the database."""
+        from bot.database import Conversation, get_session
+        from bot.handlers.chat import clear_context
+        from bot.utils.context import ConversationContext
+
+        user_id = 4343
+        async with get_session() as session:
+            for i in range(3):
+                session.add(Conversation(
+                    user_id=user_id, model_name="m",
+                    message_role="user", message_content=f"m{i}",
+                ))
+            await session.commit()
+
+        ConversationContext._contexts.clear()
+        assert await ConversationContext(user_id, "m").get_context() != []
+
+        update = MagicMock()
+        update.effective_user.id = user_id
+        update.message.reply_text = AsyncMock()
+        await clear_context.__wrapped__(update, MagicMock())
+
+        ConversationContext._contexts.clear()
+        assert await ConversationContext(user_id, "m").get_context() == []
+
+
+class TestMessageSplitting:
+    """C3: responses over Telegram's limit must be delivered, not silently dropped."""
+
+    def test_short_message_not_split(self):
+        from bot.handlers.chat import split_message
+
+        assert split_message("hello") == ["hello"]
+
+    def test_message_at_limit_not_split(self):
+        from bot.handlers.chat import TELEGRAM_MAX_MESSAGE_LENGTH, split_message
+
+        text = "a" * TELEGRAM_MAX_MESSAGE_LENGTH
+        assert split_message(text) == [text]
+
+    def test_long_message_split_losslessly(self):
+        from bot.handlers.chat import TELEGRAM_MAX_MESSAGE_LENGTH, split_message
+
+        text = "a" * (TELEGRAM_MAX_MESSAGE_LENGTH + 500)
+        chunks = split_message(text)
+
+        assert len(chunks) > 1
+        assert all(len(c) <= TELEGRAM_MAX_MESSAGE_LENGTH for c in chunks)
+        assert "".join(chunks) == text
+
+    def test_long_message_prefers_line_boundaries(self):
+        from bot.handlers.chat import TELEGRAM_MAX_MESSAGE_LENGTH, split_message
+
+        chunks = split_message("line\n" * 1200)
+
+        assert all(len(c) <= TELEGRAM_MAX_MESSAGE_LENGTH for c in chunks)
+        assert not chunks[0].endswith("li")  # split on a newline, not mid-word
+
+
 @pytest.mark.asyncio
 async def test_health_check_server():
     """Test health check server."""

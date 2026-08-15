@@ -44,9 +44,12 @@ class BotApplication:
         logger.info("Ollama client initialized", host=settings.OLLAMA_HOST)
         
         # Initialize Telegram application
+        # Without concurrent_updates PTB handles updates strictly one by one, so a
+        # single slow generation stalls every other user until it finishes.
         self.application = (
             Application.builder()
             .token(settings.BOT_TOKEN)
+            .concurrent_updates(settings.MAX_CONCURRENT_UPDATES)
             .build()
         )
         
