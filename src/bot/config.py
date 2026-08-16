@@ -164,9 +164,12 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_webhook_config(self) -> "Settings":
-        """Webhook mode needs a URL to register with Telegram."""
-        if self.BOT_MODE == "webhook" and not self.WEBHOOK_URL:
-            raise ValueError("WEBHOOK_URL is required when BOT_MODE=webhook")
+        """Webhook mode needs a URL to register with Telegram and a secret to verify requests."""
+        if self.BOT_MODE == "webhook":
+            if not self.WEBHOOK_URL:
+                raise ValueError("WEBHOOK_URL is required when BOT_MODE=webhook")
+            if not self.WEBHOOK_SECRET:
+                raise ValueError("WEBHOOK_SECRET is required when BOT_MODE=webhook")
         return self
 
     @field_validator("LOG_LEVEL")

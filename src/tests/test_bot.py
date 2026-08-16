@@ -402,5 +402,17 @@ async def test_health_check_server():
                 data = await response.json()
                 assert data["status"] == "healthy"
                 assert data["bot"] == "online"
+
+            # /healthz is liveness: no Ollama check, always alive if the process is up
+            async with session.get("http://localhost:8888/healthz") as response:
+                assert response.status == 200
+                data = await response.json()
+                assert data["status"] == "alive"
+
+            # /readyz is readiness: same Ollama-backed check as /health
+            async with session.get("http://localhost:8888/readyz") as response:
+                assert response.status == 200
+                data = await response.json()
+                assert data["status"] == "healthy"
     finally:
         await stop_health_server(runner)

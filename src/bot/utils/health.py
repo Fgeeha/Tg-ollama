@@ -7,8 +7,13 @@ from bot.utils.ollama import OllamaClient
 logger = structlog.get_logger()
 
 
+async def liveness_handler(request: web.Request) -> web.Response:
+    """Liveness check: process is up, no dependency checks. Cheap, always 200."""
+    return web.json_response({"status": "alive"})
+
+
 async def health_handler(request: web.Request) -> web.Response:
-    """Health check endpoint."""
+    """Readiness check: bot and its Ollama dependency."""
     ollama_client: OllamaClient = request.app["ollama_client"]
 
     health_status = {
@@ -56,6 +61,8 @@ async def start_health_server(ollama_client: OllamaClient, port: int = 8080) -> 
     app["ollama_client"] = ollama_client
 
     app.router.add_get("/health", health_handler)
+    app.router.add_get("/healthz", liveness_handler)
+    app.router.add_get("/readyz", health_handler)
     app.router.add_get("/metrics", metrics_handler)
 
     runner = web.AppRunner(app)

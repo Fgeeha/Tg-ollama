@@ -7,6 +7,10 @@ services:
     env_file: .env
     volumes:
       - ./data:/app/data
+    # Only needed for BOT_MODE=webhook, so Telegram can reach the built-in
+    # webhook server; harmless no-op in the default polling mode.
+    ports:
+      - "${WEBHOOK_PORT:-8081}:${WEBHOOK_PORT:-8081}"
     restart: unless-stopped
     networks:
       - ollama-network
