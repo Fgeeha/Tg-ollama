@@ -55,6 +55,7 @@ class BotApplication:
             timeout=settings.OLLAMA_TIMEOUT,
             keep_alive=settings.OLLAMA_KEEP_ALIVE,
             options=options,
+            api_key=settings.OLLAMA_API_KEY,
         )
         await self.ollama_client.verify_connection()
         logger.info("Ollama client initialized", host=settings.OLLAMA_HOST)
@@ -116,15 +117,27 @@ class BotApplication:
 
     async def start(self) -> None:
         """Start the bot."""
-        logger.info("Starting bot...")
+        logger.info("Starting bot...", mode=settings.BOT_MODE)
 
-        # Initialize and start polling
         await self.application.initialize()
         await self.application.start()
-        await self.application.updater.start_polling(
-            allowed_updates=["message", "callback_query", "inline_query"],
-            drop_pending_updates=True
-        )
+
+        if settings.BOT_MODE == "webhook":
+            assert settings.WEBHOOK_URL is not None  # enforced by Settings validation
+            await self.application.updater.start_webhook(
+                listen=settings.WEBHOOK_HOST,
+                port=settings.WEBHOOK_PORT,
+                url_path=settings.WEBHOOK_PATH,
+                webhook_url=settings.WEBHOOK_URL,
+                secret_token=settings.WEBHOOK_SECRET,
+                allowed_updates=["message", "callback_query", "inline_query"],
+                drop_pending_updates=True,
+            )
+        else:
+            await self.application.updater.start_polling(
+                allowed_updates=["message", "callback_query", "inline_query"],
+                drop_pending_updates=True
+            )
 
         logger.info("Bot started successfully", test_mode=settings.TEST_MODE)
         if settings.TEST_MODE:
@@ -186,7 +199,7 @@ async def main() -> None:
     logger.info(
         "Starting Telegram Ollama Bot",
         version="1.0.0",
-        admin_id=settings.ADMIN_ID,
+        admin_ids=settings.ADMIN_IDS,
         test_mode=settings.TEST_MODE,
     )
 

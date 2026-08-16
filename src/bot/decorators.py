@@ -21,7 +21,7 @@ def admin_only(func: Callable) -> Callable:
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
         user_id = update.effective_user.id
 
-        if user_id != settings.ADMIN_ID:
+        if user_id not in settings.ADMIN_IDS:
             await update.message.reply_text(
                 "❌ This command is restricted to administrators only."
             )
@@ -44,7 +44,7 @@ def authorized_only(func: Callable) -> Callable:
         user_id = update.effective_user.id
 
         # Admin always has access
-        if user_id == settings.ADMIN_ID:
+        if user_id in settings.ADMIN_IDS:
             return await func(update, context, *args, **kwargs)
 
         # Check test mode
@@ -86,7 +86,7 @@ def rate_limited(func: Callable) -> Callable:
         user_id = update.effective_user.id
 
         # Admin bypasses rate limiting
-        if user_id == settings.ADMIN_ID:
+        if user_id in settings.ADMIN_IDS:
             return await func(update, context, *args, **kwargs)
 
         async with get_session() as session:

@@ -30,13 +30,13 @@ jobs:
       - name: Lint
         env:
           BOT_TOKEN: test-token
-          ADMIN_ID: "1"
+          ADMIN_IDS: "1"
         run: uv run ruff check src/
 
       - name: Run tests
         env:
           BOT_TOKEN: test-token
-          ADMIN_ID: "1"
+          ADMIN_IDS: "1"
         run: uv run pytest -q
 
   build:

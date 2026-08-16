@@ -13,7 +13,7 @@ USER = 321
 
 @pytest.fixture(autouse=True)
 def as_admin(monkeypatch):
-    monkeypatch.setattr(settings, "ADMIN_ID", USER)
+    monkeypatch.setattr(settings, "ADMIN_IDS", [USER])
 
 
 def make_event():

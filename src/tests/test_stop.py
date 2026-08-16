@@ -28,7 +28,7 @@ def as_admin(monkeypatch):
     """Skip the authorization lookup; access control is tested separately."""
     from bot.config import settings
 
-    monkeypatch.setattr(settings, "ADMIN_ID", USER)
+    monkeypatch.setattr(settings, "ADMIN_IDS", [USER])
 
 
 def replies(update):

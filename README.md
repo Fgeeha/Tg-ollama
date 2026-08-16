@@ -22,7 +22,7 @@ You need [Ollama](https://ollama.com) running with at least one model pulled, an
 a bot token from [@BotFather](https://t.me/BotFather).
 
 ```bash
-cp .env.example .env          # add BOT_TOKEN and ADMIN_ID
+cp .env.example .env          # add BOT_TOKEN and ADMIN_IDS
 uv sync
 uv run python -m bot.main
 ```
@@ -85,8 +85,13 @@ Only the first two are required.
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `BOT_TOKEN` | — | Token from @BotFather |
-| `ADMIN_ID` | — | Your Telegram user ID |
+| `ADMIN_IDS` | — | Comma-separated Telegram user IDs of admins (`123,456`) |
+| `BOT_MODE` | `polling` | Update delivery: `polling` or `webhook` |
+| `WEBHOOK_URL` | — | Public HTTPS URL for Telegram; required when `BOT_MODE=webhook` |
+| `WEBHOOK_HOST` / `WEBHOOK_PORT` / `WEBHOOK_PATH` | `0.0.0.0` / `8081` / `/webhook` | Where the built-in webhook server listens |
+| `WEBHOOK_SECRET` | — | Secret token Telegram echoes back for verification |
 | `OLLAMA_HOST` | `http://localhost:11434` | Where Ollama listens |
+| `OLLAMA_API_KEY` | — | Bearer token for LiteLLM or another authenticated Ollama-compatible API |
 | `OLLAMA_TIMEOUT` | `60` | Seconds to wait for data; a stalled model is dropped |
 | `DEFAULT_MODEL` | `llama2` | Model for users who never chose one |
 | `MAX_CONTEXT_TOKENS` | `3000` | Token budget for conversation history |

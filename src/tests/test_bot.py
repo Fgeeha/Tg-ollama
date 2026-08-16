@@ -14,7 +14,7 @@ def mock_settings():
     """Create mock settings for testing."""
     return Settings(
         BOT_TOKEN="test_token",
-        ADMIN_ID=123456789,
+        ADMIN_IDS=[123456789],
         OLLAMA_HOST="http://localhost:11434",
         DATABASE_URL="sqlite:///test.db",
         TEST_MODE=False,
@@ -156,7 +156,7 @@ class TestDecorators:
         mock_update.message.reply_text = AsyncMock()
         mock_context = MagicMock()
 
-        with patch('bot.decorators.settings.ADMIN_ID', 123456789):
+        with patch('bot.decorators.settings.ADMIN_IDS', [123456789]):
             result = await admin_command(mock_update, mock_context)
 
             assert result is None
@@ -186,7 +186,7 @@ class TestDecorators:
 
         # Test with TEST_MODE enabled
         with patch('bot.decorators.settings.TEST_MODE', True), \
-             patch('bot.decorators.settings.ADMIN_ID', 123456789):
+             patch('bot.decorators.settings.ADMIN_IDS', [123456789]):
 
             result = await user_command(mock_update, mock_context)
             assert result is None

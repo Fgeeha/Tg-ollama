@@ -19,7 +19,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = user.id
 
     # Check if user is admin
-    is_admin = user_id == settings.ADMIN_ID
+    is_admin = user_id in settings.ADMIN_IDS
 
     # Add or update user in database
     async with get_session() as session:
@@ -91,7 +91,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /help command."""
     user_id = update.effective_user.id
-    is_admin = user_id == settings.ADMIN_ID
+    is_admin = user_id in settings.ADMIN_IDS
 
     # Check if user is authorized
     async with get_session() as session:

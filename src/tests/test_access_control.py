@@ -35,7 +35,7 @@ def replies(update) -> list[str]:
 
 @pytest.fixture(autouse=True)
 def admin_id(monkeypatch):
-    monkeypatch.setattr(settings, "ADMIN_ID", ADMIN)
+    monkeypatch.setattr(settings, "ADMIN_IDS", [ADMIN])
     monkeypatch.setattr(settings, "TEST_MODE", False)
 
 

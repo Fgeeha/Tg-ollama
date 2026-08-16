@@ -1,8 +1,9 @@
 """Configuration module using Pydantic settings."""
 from pathlib import Path
+from typing import Annotated
 
-from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, field_validator, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -16,12 +17,47 @@ class Settings(BaseSettings):
 
     # Telegram Bot
     BOT_TOKEN: str = Field(..., description="Telegram Bot Token")
-    ADMIN_ID: int = Field(..., description="Admin Telegram User ID")
+    # NoDecode: a bare env value isn't valid JSON for a list field, and
+    # pydantic-settings would otherwise try to json.loads() it and blow up
+    # before the comma-splitting validator below ever runs.
+    ADMIN_IDS: Annotated[list[int], NoDecode] = Field(
+        ..., description="Comma-separated admin Telegram user IDs"
+    )
+
+    # Update delivery
+    BOT_MODE: str = Field(
+        default="polling",
+        description="How updates are delivered: 'polling' or 'webhook'"
+    )
+    WEBHOOK_URL: str | None = Field(
+        default=None,
+        description="Publicly reachable HTTPS URL registered with Telegram for webhook mode"
+    )
+    WEBHOOK_HOST: str = Field(
+        default="0.0.0.0",
+        description="Host the webhook server binds to"
+    )
+    WEBHOOK_PORT: int = Field(
+        default=8081,
+        description="Port the webhook server listens on"
+    )
+    WEBHOOK_PATH: str = Field(
+        default="/webhook",
+        description="URL path the webhook server listens on"
+    )
+    WEBHOOK_SECRET: str | None = Field(
+        default=None,
+        description="Secret token Telegram sends back on every webhook request for verification"
+    )
 
     # Ollama
     OLLAMA_HOST: str = Field(
         default="http://localhost:11434",
         description="Ollama API host URL"
+    )
+    OLLAMA_API_KEY: str | None = Field(
+        default=None,
+        description="Bearer token for LiteLLM or other authenticated Ollama-compatible endpoints"
     )
     OLLAMA_TIMEOUT: int = Field(
         default=60,
@@ -106,6 +142,32 @@ class Settings(BaseSettings):
         default=9090,
         description="Prometheus metrics port"
     )
+
+    @field_validator("ADMIN_IDS", mode="before")
+    @classmethod
+    def parse_admin_ids(cls, v: str | int | list[int]) -> list[int]:
+        """Accept a comma-separated env value or an already-parsed list."""
+        if isinstance(v, str):
+            return [int(part.strip()) for part in v.split(",") if part.strip()]
+        if isinstance(v, int):
+            return [v]
+        return v
+
+    @field_validator("BOT_MODE")
+    @classmethod
+    def validate_bot_mode(cls, v: str) -> str:
+        """Validate update delivery mode."""
+        v = v.lower()
+        if v not in ("polling", "webhook"):
+            raise ValueError("BOT_MODE must be 'polling' or 'webhook'")
+        return v
+
+    @model_validator(mode="after")
+    def validate_webhook_config(self) -> "Settings":
+        """Webhook mode needs a URL to register with Telegram."""
+        if self.BOT_MODE == "webhook" and not self.WEBHOOK_URL:
+            raise ValueError("WEBHOOK_URL is required when BOT_MODE=webhook")
+        return self
 
     @field_validator("LOG_LEVEL")
     @classmethod
