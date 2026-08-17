@@ -416,3 +416,33 @@ async def test_health_check_server():
                 assert data["status"] == "healthy"
     finally:
         await stop_health_server(runner)
+
+
+@pytest.mark.asyncio
+async def test_health_check_server_reports_readiness_but_not_liveness_when_ollama_is_down():
+    """The whole point of the split: a dead Ollama fails readiness, not liveness."""
+    from aiohttp import ClientSession
+
+    from bot.utils.health import start_health_server, stop_health_server
+
+    mock_ollama = AsyncMock()
+    mock_ollama.health_check.return_value = False
+
+    runner = await start_health_server(mock_ollama, port=8889)
+
+    try:
+        async with ClientSession() as session:
+            # Liveness must stay "alive": the process itself is fine.
+            async with session.get("http://localhost:8889/healthz") as response:
+                assert response.status == 200
+                data = await response.json()
+                assert data["status"] == "alive"
+
+            # Readiness (and its legacy /health alias) must reflect the outage.
+            for path in ("/health", "/readyz"):
+                async with session.get(f"http://localhost:8889{path}") as response:
+                    assert response.status == 503
+                    data = await response.json()
+                    assert data["status"] == "degraded"
+    finally:
+        await stop_health_server(runner)

@@ -40,6 +40,7 @@ class OllamaClient:
         keep_alive: str | None = None,
         options: dict[str, Any] | None = None,
         api_key: str | None = None,
+        api_style: str = "ollama",
     ):
         """Initialize Ollama client.
 
@@ -47,16 +48,22 @@ class OllamaClient:
             base_url: Ollama API base URL.
             timeout: Per-operation timeout, seconds.
             keep_alive: How long Ollama keeps the model in memory after a
-                request; avoids reloading it before every answer.
+                request; avoids reloading it before every answer. Ignored in
+                "openai" api_style (no such concept in that API).
             options: Generation options passed through to Ollama
-                (temperature, num_ctx, ...).
+                (temperature, num_ctx, ...). In "openai" api_style only
+                "temperature" has an equivalent; the rest are ignored.
             api_key: Bearer token sent as Authorization header, for LiteLLM
                 or other Ollama-compatible endpoints that require auth.
+            api_style: "ollama" for the native Ollama REST API, or "openai"
+                for OpenAI-compatible proxies (e.g. LiteLLM) that don't
+                implement Ollama's native /api/* routes.
         """
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.keep_alive = keep_alive
         self.options = options or {}
+        self._openai = api_style == "openai"
         headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         self.client = httpx.AsyncClient(
             base_url=self.base_url,
@@ -80,7 +87,7 @@ class OllamaClient:
     async def verify_connection(self) -> bool:
         """Verify connection to Ollama server."""
         try:
-            response = await self.client.get("/api/tags")
+            response = await self.client.get("/v1/models" if self._openai else "/api/tags")
             response.raise_for_status()
             logger.info("Ollama connection verified", base_url=self.base_url)
             return True
@@ -99,9 +106,16 @@ class OllamaClient:
             or current_time - self._last_model_check > self._model_check_interval
         ):
             try:
-                response = await self.client.get("/api/tags")
+                response = await self.client.get("/v1/models" if self._openai else "/api/tags")
                 response.raise_for_status()
-                self._available_models = response.json().get("models", [])
+                if self._openai:
+                    # OpenAI-style listing carries no size/family info.
+                    self._available_models = [
+                        {"name": model["id"]}
+                        for model in response.json().get("data", [])
+                    ]
+                else:
+                    self._available_models = response.json().get("models", [])
                 self._last_model_check = current_time
                 logger.info(f"Found {len(self._available_models)} available models")
             except httpx.HTTPError as e:
@@ -139,7 +153,24 @@ class OllamaClient:
         if not await self.model_exists(model):
             raise OllamaModelNotFoundError(f"Model '{model}' not found")
 
-        payload: dict[str, Any] = {
+        start_time = time.time()
+
+        if self._openai:
+            payload = {
+                "model": model,
+                "messages": self._to_openai_messages(messages),
+                "stream": True,
+                "stream_options": {"include_usage": True},
+                **kwargs,
+            }
+            temperature = self.options.get("temperature")
+            if temperature is not None:
+                payload.setdefault("temperature", temperature)
+            async for chunk in self._chat_stream_openai(payload, start_time):
+                yield chunk
+            return
+
+        payload = {
             "model": model,
             "messages": messages,
             "stream": True,
@@ -150,9 +181,79 @@ class OllamaClient:
         if self.options:
             payload.setdefault("options", self.options)
 
-        start_time = time.time()
         async for chunk in self._chat_stream(payload, start_time):
             yield chunk
+
+    @staticmethod
+    def _to_openai_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Convert Ollama-style messages (flat "images" field) to OpenAI content parts.
+
+        ponytail: assumes image/jpeg regardless of actual format, since the
+        caller never tracks a mime type; swap in real sniffing if a
+        non-JPEG source starts producing broken image_url data URIs.
+        """
+        converted = []
+        for message in messages:
+            images = message.get("images")
+            if not images:
+                converted.append({"role": message["role"], "content": message.get("content", "")})
+                continue
+            content: list[dict[str, Any]] = []
+            text = message.get("content", "")
+            if text:
+                content.append({"type": "text", "text": text})
+            content.extend(
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img}"}}
+                for img in images
+            )
+            converted.append({"role": message["role"], "content": content})
+        return converted
+
+    async def _chat_stream_openai(
+            self,
+            payload: dict[str, Any],
+            start_time: float
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Stream an OpenAI-compatible chat completion, adapted to the Ollama chunk shape."""
+        import json
+
+        try:
+            async with self.client.stream(
+                    "POST",
+                    "/v1/chat/completions",
+                    json=payload,
+                    timeout=httpx.Timeout(self.timeout),
+            ) as response:
+                response.raise_for_status()
+
+                usage: dict[str, Any] = {}
+                async for line in response.aiter_lines():
+                    if not line or not line.startswith("data:"):
+                        continue
+                    data_str = line[len("data:"):].strip()
+                    if data_str == "[DONE]":
+                        break
+
+                    data = json.loads(data_str)
+                    if data.get("usage"):
+                        usage = data["usage"]
+
+                    choices = data.get("choices") or []
+                    content = choices[0].get("delta", {}).get("content") if choices else None
+                    if content:
+                        yield {"message": {"content": content}, "done": False}
+
+                yield {
+                    "message": {"content": ""},
+                    "done": True,
+                    "response_time_ms": int((time.time() - start_time) * 1000),
+                    "prompt_eval_count": usage.get("prompt_tokens", 0),
+                    "eval_count": usage.get("completion_tokens", 0),
+                }
+
+        except httpx.HTTPError as e:
+            logger.error("Stream chat failed", error=str(e))
+            raise OllamaError(f"Stream chat failed: {e}") from e
 
     async def _chat_stream(
             self,
@@ -190,6 +291,9 @@ class OllamaClient:
 
     async def show_model_info(self, model: str) -> dict[str, Any]:
         """Get detailed information about a model."""
+        if self._openai:
+            # No equivalent in the OpenAI API (no license/template/quantization).
+            return {}
         try:
             response = await self.client.post(
                 "/api/show",
@@ -234,7 +338,7 @@ class OllamaClient:
     async def health_check(self) -> bool:
         """Perform health check on Ollama server."""
         try:
-            response = await self.client.get("/")
+            response = await self.client.get("/v1/models" if self._openai else "/")
             return response.status_code == 200
         except Exception:
             return False

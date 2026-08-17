@@ -39,13 +39,13 @@ async def list_models(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         keyboard = []
         for model in models:
             model_name = model["name"]
-            # Format size
-            size_gb = model.get("size", 0) / (1024**3)
-            size_str = f"{size_gb:.1f}GB"
+            # Format size (unknown for OpenAI-style listings, e.g. LiteLLM - omit rather than fake it)
+            size = model.get("size")
+            size_suffix = f" ({size / (1024**3):.1f}GB)" if size else ""
 
             # Add checkmark for current model
             is_current = model_name == current_model
-            display_name = f"{'✅ ' if is_current else ''}{model_name} ({size_str})"
+            display_name = f"{'✅ ' if is_current else ''}{model_name}{size_suffix}"
 
             keyboard.append([
                 InlineKeyboardButton(

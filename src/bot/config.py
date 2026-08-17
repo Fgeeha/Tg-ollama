@@ -59,6 +59,13 @@ class Settings(BaseSettings):
         default=None,
         description="Bearer token for LiteLLM or other authenticated Ollama-compatible endpoints"
     )
+    OLLAMA_API_STYLE: str = Field(
+        default="ollama",
+        description=(
+            "Backend API shape: 'ollama' (native /api/*) or 'openai' "
+            "(LiteLLM/OpenAI-compatible proxies that only expose /v1/*)"
+        )
+    )
     OLLAMA_TIMEOUT: int = Field(
         default=60,
         description="Ollama API timeout in seconds"
@@ -160,6 +167,15 @@ class Settings(BaseSettings):
         v = v.lower()
         if v not in ("polling", "webhook"):
             raise ValueError("BOT_MODE must be 'polling' or 'webhook'")
+        return v
+
+    @field_validator("OLLAMA_API_STYLE")
+    @classmethod
+    def validate_ollama_api_style(cls, v: str) -> str:
+        """Validate the backend API shape."""
+        v = v.lower()
+        if v not in ("ollama", "openai"):
+            raise ValueError("OLLAMA_API_STYLE must be 'ollama' or 'openai'")
         return v
 
     @model_validator(mode="after")

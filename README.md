@@ -92,6 +92,7 @@ Only the first two are required.
 | `WEBHOOK_SECRET` | — | Secret token Telegram echoes back for verification |
 | `OLLAMA_HOST` | `http://localhost:11434` | Where Ollama listens |
 | `OLLAMA_API_KEY` | — | Bearer token for LiteLLM or another authenticated Ollama-compatible API |
+| `OLLAMA_API_STYLE` | `ollama` | `ollama` (native `/api/*`) or `openai` (LiteLLM/proxies exposing only `/v1/*`) |
 | `OLLAMA_TIMEOUT` | `60` | Seconds to wait for data; a stalled model is dropped |
 | `DEFAULT_MODEL` | `llama2` | Model for users who never chose one |
 | `MAX_CONTEXT_TOKENS` | `3000` | Token budget for conversation history |

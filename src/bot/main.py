@@ -56,6 +56,7 @@ class BotApplication:
             keep_alive=settings.OLLAMA_KEEP_ALIVE,
             options=options,
             api_key=settings.OLLAMA_API_KEY,
+            api_style=settings.OLLAMA_API_STYLE,
         )
         await self.ollama_client.verify_connection()
         logger.info("Ollama client initialized", host=settings.OLLAMA_HOST)
